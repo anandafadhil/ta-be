@@ -37,6 +37,7 @@ INSTALLED_APPS = [
     'django.contrib.sessions',
     'django.contrib.messages',
     'django.contrib.staticfiles',
+    'predict_PDDikti_be'
 ]
 
 MIDDLEWARE = [
@@ -75,10 +76,20 @@ WSGI_APPLICATION = 'ta_be.wsgi.application'
 
 DATABASES = {
     'default': {
-        'ENGINE': 'django.db.backends.sqlite3',
-        'NAME': BASE_DIR / 'db.sqlite3',
-    }
+        'ENGINE': 'django.db.backends.postgresql',
+        'NAME': 'postgres',        
+        'USER': 'postgres.tbfgfbqjuzgzyfoyfvls',        
+        'PASSWORD': 'dqaDEkUHPCOKQ63l',
+        'HOST': 'aws-0-ap-southeast-1.pooler.supabase.com', 
+        'PORT': '5432',
+    },
+
+    # 'temp': {
+    #     'ENGINE': 'django.db.backends.sqlite3',
+    #     'NAME': BASE_DIR / 'db.sqlite3',
+    # }
 }
+
 
 
 # Password validation
