@@ -1,0 +1,33 @@
+# Byte-compiled / optimized Python files
+__pycache__/
+*.py[cod]
+
+# Caches for various tools
+*.cache/
+*.log
+
+# Virtual environment
+venv/
+env/
+
+# Database files
+*.sqlite3
+
+# Static files
+staticfiles/
+
+# Media files
+media/
+
+# Secret key file
+*.secret_key
+
+# Configuration files
+*.env
+
+# Ignore migrations, as they can contain sensitive data in some cases
+**/migrations/*.py
+**/migrations/*.pyc
+
+# Ignore any local settings files
+**/local_settings.py
