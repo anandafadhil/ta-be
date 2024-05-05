@@ -86,3 +86,9 @@ class WilayahUniv(models.Model):
     class Meta:
         managed = False
         db_table = 'wilayah_univ'
+
+class SavedUniProdi(models.Model):
+    id_univ = models.TextField(blank=True, null=True)
+    nama_univ = models.TextField(blank=True, null=True)
+    id_prodi = models.TextField(primary_key=True)
+    nama_prodi = models.TextField(blank=True, null=True)
