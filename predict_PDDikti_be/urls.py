@@ -12,4 +12,6 @@ urlpatterns = [
     path('sks-handle', handle_data_sks, name='handle_data_sks'),
     path('bulk-handle/<str:id_prodi>', handle_data_bulk, name='handle_data_bulk'),
     path('bulk-processed', processed_data_bulk, name='processed_data_bulk'),
+    path('get-prediction', get_prediction, name='get_prediction'),
+
 ]

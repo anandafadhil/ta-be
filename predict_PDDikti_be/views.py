@@ -18,6 +18,8 @@ from sklearn.decomposition import PCA
 from imblearn.over_sampling import SMOTE
 import matplotlib.pyplot as plt
 from sklearn.linear_model import LogisticRegression
+from django.conf import settings
+
 
 def get_univ_distinct(request):
     univ_name_distinct = DaftarProdiPrediksi.objects.values_list('nama_univ', flat=True).distinct()
@@ -50,6 +52,16 @@ def get_statistik_prodi(request=None, id_prodi=None):
                                                                                          'avg_skst_sem3', 'avg_skst_sem4', 'avg_kenaikan_skst', 'avg_persentase_lulus_tepat_waktu')
     return JsonResponse({'data': list(statistik_prodi)})
 
+def get_prediction(y_pred_stacking_loaded):
+    # Process the prediction result here
+    # For example, you can return a specific message based on the prediction
+    if y_pred_stacking_loaded == 1:
+        print('yes')
+        return JsonResponse({"prediction": True})
+    else:
+        print('ga')
+        return JsonResponse({"prediction": False})
+    
 @csrf_exempt
 def handle_data_sks(request):
     data = json.loads(request.body)
@@ -144,21 +156,19 @@ def handle_data_sks(request):
 
 
     df = pd.DataFrame(skor_data_array)
-
-    model_directory = r"C:\..a\Universitas_Indonesia\AKADEMIS\.SEM88\TA\code"
-
-    # Construct the full path to your model file
-    model_file_path = os.path.join(model_directory, 'stacking_classifier_model_fix.h5')
-
-    # Load the stacking classifier model
+    model_file_path = os.path.join(settings.BASE_DIR, 'predict_PDDikti_be', 'static', 'predict_PDDikti_be', 'model_files', 'stacking_classifier_model_fix.h5')
     stacking_clf_loaded = joblib.load(model_file_path)
-
-    # Use the loaded model for prediction
     y_pred_stacking_loaded = stacking_clf_loaded.predict(df)
 
     print("RES", y_pred_stacking_loaded)
-
-    return JsonResponse({"message": "SUCCESS"})
+    if y_pred_stacking_loaded == 1:
+        print('yes')
+        return JsonResponse({"prediction": True})
+    else:
+        print('ga')
+        return JsonResponse({"prediction": False})
+    # return prediction_result
+    # return JsonResponse({"message": prediction_result})
 
 @csrf_exempt
 def handle_data_bulk(request, id_prodi):
@@ -177,10 +187,10 @@ def handle_data_bulk(request, id_prodi):
             'SKS_sem_2': student['SKS_sem_2'],
             'SKS_sem_3': student['SKS_sem_3'],
             'SKS_sem_4': student['SKS_sem_4'],
-            'SKST_sem_1': student['SKST_sem_1'],
-            'SKST_sem_2': student['SKST_sem_2'],
-            'SKST_sem_3': student['SKST_sem_3'],
-            'SKST_sem_4': student['SKST_sem_4'],
+            'SKSL_sem_1': student['SKSL_sem_1'],
+            'SKSL_sem_2': student['SKSL_sem_2'],
+            'SKSL_sem_3': student['SKSL_sem_3'],
+            'SKSL_sem_4': student['SKSL_sem_4'],
         }
         students_data.append(student_data)
 
@@ -189,7 +199,115 @@ def handle_data_bulk(request, id_prodi):
         MODEL
         """
     print("ceK", list(students_data))
-    return JsonResponse({"data": students_data})
+    print("data1", len(students_data))
+    processed_data = []
+    for splitted_stud in students_data :
+        SKS_sem_1 = splitted_stud['SKS_sem_1']
+        SKSL_sem_1 = splitted_stud['SKSL_sem_1']
+        IPK_sem_1 = splitted_stud['IPK_sem_1']
+
+        SKS_sem_2 = splitted_stud['SKS_sem_2']
+        SKSL_sem_2 = splitted_stud['SKSL_sem_2']
+        IPK_sem_2 = splitted_stud['IPK_sem_2']
+
+        SKS_sem_3 = splitted_stud['SKS_sem_3']
+        SKSL_sem_3 = splitted_stud['SKSL_sem_3']
+        IPK_sem_3 = splitted_stud['IPK_sem_3']
+
+        SKS_sem_4 = splitted_stud['SKS_sem_4']
+        SKSL_sem_4 = splitted_stud['SKSL_sem_4']
+        IPK_sem_4 = splitted_stud['IPK_sem_4']
+
+        NPM = splitted_stud['NPM']
+
+
+        # handling prodi data
+        stat_prod = get_statistik_prodi(id_prodi=id_prodi)
+        stat_prod_data = stat_prod.content.decode()
+        # Assuming 'stat_prod_data' contains a 'data' key that has the stats dictionary
+        stats_dict = json.loads(stat_prod_data)
+        stats = stats_dict['data']
+        first_stat = stats[0]
+        
+        
+        IPK_sem_1 = float(IPK_sem_1)
+        IPK_sem_2 = float(IPK_sem_2)
+        IPK_sem_3 = float(IPK_sem_3)
+        IPK_sem_4 = float(IPK_sem_4)
+        avg_ipk_sem1, avg_ipk_sem2, avg_ipk_sem3, avg_ipk_sem4 = first_stat[:4]
+        skor_ipk_sem1 = IPK_sem_1 / avg_ipk_sem1
+        skor_ipk_sem2 = IPK_sem_2 / avg_ipk_sem2
+        skor_ipk_sem3 = IPK_sem_3 / avg_ipk_sem3
+        skor_ipk_sem4 = IPK_sem_4 / avg_ipk_sem4
+        
+        SKS_sem_1 = float(SKS_sem_1)
+        SKS_sem_2 = float(SKS_sem_2)
+        SKS_sem_3 = float(SKS_sem_3)
+        SKS_sem_4 = float(SKS_sem_4)
+        avg_sks_sem1, avg_sks_sem2, avg_sks_sem3, avg_sks_sem4 = first_stat[4:8]
+        skor_sks_sem1 = SKS_sem_1 / avg_sks_sem1
+        skor_sks_sem2 = SKS_sem_2 / avg_sks_sem2
+        skor_sks_sem3 = SKS_sem_3 / avg_sks_sem3
+        skor_sks_sem4 = SKS_sem_4 / avg_sks_sem4
+
+        # Declaring avg_skst pos
+        avg_skst_sem1, avg_skst_sem2, avg_skst_sem3, avg_skst_sem4, avg_kenaikan_skst = first_stat[8:13]
+
+        # Penjumlahan sks total
+        skst_sem1 = SKSL_sem_1
+        skst_sem2 = SKSL_sem_1 + SKSL_sem_2
+        skst_sem3 = SKSL_sem_1 + SKSL_sem_2 + SKSL_sem_3
+        skst_sem4 = SKSL_sem_1 + SKSL_sem_2 + SKSL_sem_3 + SKSL_sem_4
+
+        skst_sem1 = float(skst_sem1)
+        skst_sem2 = float(skst_sem2)
+        skst_sem3 = float(skst_sem3)
+        skst_sem4 = float(skst_sem4)
+        skor_skst_sem1 = skst_sem1 / avg_skst_sem1
+        skor_skst_sem2 = skst_sem2 / avg_skst_sem2
+        skor_skst_sem3 = skst_sem3 / avg_skst_sem3
+        skor_skst_sem4 = skst_sem4 / avg_skst_sem4
+
+        kenaikan_skst = (skst_sem1 + skst_sem2 + skst_sem3 + skst_sem4) / 4.0
+        skor_kenaikan_skst = float(kenaikan_skst) / avg_kenaikan_skst
+
+        avg_persentase_lulus_tepat_waktu = first_stat[13]
+        rata_rata_prodi = avg_persentase_lulus_tepat_waktu
+
+        skor_data_array = [
+            {
+                "skor_ipk_sem1": skor_ipk_sem1,
+                "skor_ipk_sem2": skor_ipk_sem2,
+                "skor_ipk_sem3": skor_ipk_sem3,
+                "skor_ipk_sem4": skor_ipk_sem4,
+                "skor_sks_sem1": skor_sks_sem1,
+                "skor_sks_sem2": skor_sks_sem2,
+                "skor_sks_sem3": skor_sks_sem3,
+                "skor_sks_sem4": skor_sks_sem4,
+                "skor_skst_sem1": skor_skst_sem1,
+                "skor_skst_sem2": skor_skst_sem2,
+                "skor_skst_sem3": skor_skst_sem3,
+                "skor_skst_sem4": skor_skst_sem4,
+                "skor_kenaikan_skst": skor_kenaikan_skst,
+                "rata_rata_prodi": rata_rata_prodi,
+            }
+        ]
+
+
+        df = pd.DataFrame(skor_data_array)
+        model_file_path = os.path.join(settings.BASE_DIR, 'predict_PDDikti_be', 'static', 'predict_PDDikti_be', 'model_files', 'stacking_classifier_model_fix.h5')
+        stacking_clf_loaded = joblib.load(model_file_path)
+        y_pred_stacking_loaded = stacking_clf_loaded.predict(df)
+
+        if y_pred_stacking_loaded == 1:
+            result = "Tepat Waktu"
+            processed_data.append({"NPM": NPM, "RES":result})
+        else:
+            result = "Tidak Tepat Waktu"
+            processed_data.append({"NPM": NPM, "RES":result})
+        
+        print("RES", processed_data)
+    return JsonResponse({"data": processed_data})
 
 def processed_data_bulk(request):
     students_data = request.session.get('processed_data')
