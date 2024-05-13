@@ -13,5 +13,9 @@ urlpatterns = [
     path('bulk-handle/<str:id_prodi>', handle_data_bulk, name='handle_data_bulk'),
     path('bulk-processed', processed_data_bulk, name='processed_data_bulk'),
     path('get-prediction', get_prediction, name='get_prediction'),
+    path('get-avg-grad-time-univ-all', get_avg_grad_time_univ_all, name='get_avg_grad_time_univ_all'),
+    path('get-ketepatan-grad-time-univ-all', get_ketepatan_grad_time_univ_all, name='get_ketepatan_grad_time_univ_all'),
+    path('get-prog-grad-time-univ-all', get_prog_grad_time_univ_all, name='get_prog_grad_time_univ_all'),
+    path('get-dist-grad-univ-all/<str:selected_year_fe>', get_dist_grad_univ_all, name='get_dist_grad_univ_all'),
 
 ]

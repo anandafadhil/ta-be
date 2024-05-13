@@ -4,7 +4,8 @@ from .models import *
 import json, os, joblib
 from django.views.decorators.csrf import csrf_exempt
 from django.core import serializers
-from django.db.models import Sum
+from django.db.models import Sum, ExpressionWrapper, FloatField, F, IntegerField, CharField
+from django.db.models.functions import Cast
 import pandas as pd
 from sklearn.ensemble import RandomForestClassifier, GradientBoostingClassifier, StackingClassifier
 from xgboost import XGBClassifier
@@ -173,8 +174,7 @@ def handle_data_sks(request):
 @csrf_exempt
 def handle_data_bulk(request, id_prodi):
     data = json.loads(request.body)
-    print(data)
-    print(id_prodi)
+
     students_data = []
     for student in data['data']:
         student_data = {
@@ -356,4 +356,188 @@ def get_statistik_lulus_tahun(request):
     for row in query_1:
         print(row)
     
+
+def get_avg_grad_time_univ_all(request=None):
+    by_year = StatistikProdiVisualisasi.objects.values('tahun_angkatan').annotate(
+    avg_grad_time=Cast(
+        (Sum(F('jml_mhs_lulus35') * 3.5) + 
+            Sum(F('jml_mhs_lulus40') * 4.0) + 
+            Sum(F('jml_mhs_lulus45') * 4.5) + 
+            Sum(F('jml_mhs_lulus50') * 5.0) + 
+            Sum(F('jml_mhs_lulus55') * 5.5) + 
+            Sum(F('jml_mhs_lulus60') * 6.0)) / 
+        Sum(F('jml_mhs_lulus35') + F('jml_mhs_lulus40') + F('jml_mhs_lulus45') + 
+            F('jml_mhs_lulus50') + F('jml_mhs_lulus55') + F('jml_mhs_lulus60')),
+        output_field=FloatField()
+        )
+    ).order_by('tahun_angkatan')
+
+    # Calculate overall average
+    all_time = StatistikProdiVisualisasi.objects.aggregate(
+        avg_grad_time=Cast(
+            (Sum(F('jml_mhs_lulus35') * 3.5) + 
+             Sum(F('jml_mhs_lulus40') * 4.0) + 
+             Sum(F('jml_mhs_lulus45') * 4.5) + 
+             Sum(F('jml_mhs_lulus50') * 5.0) + 
+             Sum(F('jml_mhs_lulus55') * 5.5) + 
+             Sum(F('jml_mhs_lulus60') * 6.0)) / 
+            Sum(F('jml_mhs_lulus35') + F('jml_mhs_lulus40') + F('jml_mhs_lulus45') + 
+                F('jml_mhs_lulus50') + F('jml_mhs_lulus55') + F('jml_mhs_lulus60')),
+            output_field=FloatField()
+        )
+    )
+
+    # Merge results
+    results = list(by_year) + [{'tahun_angkatan': 'All Time', **all_time}]
+    list_selected = []
+    for avg_lulus in list(results) :
+        year = str(avg_lulus['tahun_angkatan'])
+        avg_grad = avg_lulus['avg_grad_time']
+        rounded_avg_grad = round(avg_grad, 1)
+        # print(type(year), rounded_avg_grad) 
+        if year == "All Time" : 
+            list_selected.append({"selected_year": year, "avg_grad":rounded_avg_grad})
+            break
+        else :
+            continue
+    print(list_selected)
+    return JsonResponse(list_selected, safe=False)
+
+
+def get_ketepatan_grad_time_univ_all(request=None):
+    # by_year = StatistikProdiVisualisasi.objects.values('tahun_angkatan').annotate(
+    # avg_grad_time=Cast(
+    #     (Sum(F('jml_mhs_lulus35') * 3.5) + 
+    #         Sum(F('jml_mhs_lulus40') * 4.0)) / 
+    #     Sum(F('jml_mhs_lulus35') + F('jml_mhs_lulus40') + F('jml_mhs_lulus45') + 
+    #         F('jml_mhs_lulus50') + F('jml_mhs_lulus55') + F('jml_mhs_lulus60')),
+    #     output_field=FloatField()
+    #     )
+    # ).order_by('tahun_angkatan')
+
+    # Calculate overall average
+    all_time = StatistikProdiVisualisasi.objects.aggregate(
+        avg_grad_time=Cast(
+            (Sum(F('jml_mhs_lulus35')) + 
+             Sum(F('jml_mhs_lulus40'))) * 1.0 / 
+            Sum(F('jml_mhs_lulus35') + F('jml_mhs_lulus40') + F('jml_mhs_lulus45') + 
+                F('jml_mhs_lulus50') + F('jml_mhs_lulus55') + F('jml_mhs_lulus60')),
+            output_field=FloatField()
+        )
+    )
+
+    # Merge results
+    results = [{'tahun_angkatan': 'All Time', **all_time}]
+    list_selected = []
+    for avg_lulus in list(results) :
+        year = str(avg_lulus['tahun_angkatan'])
+        avg_grad = avg_lulus['avg_grad_time']
+        rounded_tepat_grad = round(avg_grad, 4)*100
+        rounded_tidak_tepat_grad = 100 - rounded_tepat_grad
+        print(type(year), rounded_tepat_grad) 
+        if year == "All Time" : 
+            list_selected.append({"selected_year": year, "tepat_grad":rounded_tepat_grad, "tidak_tepat_grad": rounded_tidak_tepat_grad})
+            break
+        else :
+            continue
+    print(list_selected)
+    return JsonResponse(list_selected, safe=False)
+
+def get_prog_grad_time_univ_all(request=None):
+    by_year = StatistikProdiVisualisasi.objects.values('tahun_angkatan').annotate(
+    avg_grad_time=Cast(
+        (Sum(F('jml_mhs_lulus35')) + 
+            Sum(F('jml_mhs_lulus40'))) *1.0 / 
+        Sum(F('jml_mhs_lulus35') + F('jml_mhs_lulus40') + F('jml_mhs_lulus45') + 
+            F('jml_mhs_lulus50') + F('jml_mhs_lulus55') + F('jml_mhs_lulus60')),
+        output_field=FloatField()
+        )
+    ).order_by('tahun_angkatan')
+
+    # Calculate overall average
+    all_time = StatistikProdiVisualisasi.objects.aggregate(
+        avg_grad_time=Cast(
+            (Sum(F('jml_mhs_lulus35')) + 
+             Sum(F('jml_mhs_lulus40'))) * 1.0 / 
+            Sum(F('jml_mhs_lulus35') + F('jml_mhs_lulus40') + F('jml_mhs_lulus45') + 
+                F('jml_mhs_lulus50') + F('jml_mhs_lulus55') + F('jml_mhs_lulus60')),
+            output_field=FloatField()
+        )
+    )
+
+    # Merge results
+    results = list(by_year) + [{'tahun_angkatan': 'All Time', **all_time}]
+    list_selected = []
+    for avg_lulus in list(results) :
+        year = str(avg_lulus['tahun_angkatan'])
+        avg_grad = avg_lulus['avg_grad_time']
+        rounded_tepat_grad = round(avg_grad, 4)*100
+        rounded_tidak_tepat_grad = round((100 - rounded_tepat_grad), 4)
+        # print(rounded_tepat_grad)
+        # print(rounded_tidak_tepat_grad)
+        # print(type(year), rounded_tepat_grad) 
+        if year != "All Time" : 
+            list_selected.append({"selected_year": year, "tepat_grad":rounded_tepat_grad, "tidak_tepat_grad": rounded_tidak_tepat_grad})
+            
+        else :
+            continue
+    print(list_selected)
+    return JsonResponse(list_selected, safe=False)
+
+def get_dist_grad_univ_all(request, selected_year_fe) :
+    selected_year = selected_year_fe
+    annual_stats = StatistikProdiVisualisasi.objects.values('tahun_angkatan').annotate(
+    tahun=Cast('tahun_angkatan', output_field=CharField()),
+    jml_mhs_lulus35=Cast(Sum('jml_mhs_lulus35'), output_field=IntegerField()),
+    jml_mhs_lulus40=Cast(Sum('jml_mhs_lulus40'), output_field=IntegerField()),
+    jml_mhs_lulus45=Cast(Sum('jml_mhs_lulus45'), output_field=IntegerField()),
+    jml_mhs_lulus50=Cast(Sum('jml_mhs_lulus50'), output_field=IntegerField()),
+    jml_mhs_lulus55=Cast(Sum('jml_mhs_lulus55'), output_field=IntegerField()),
+    jml_mhs_lulus60=Cast(Sum('jml_mhs_lulus60'), output_field=IntegerField())
+    ).order_by('tahun_angkatan')
+
+    # Convert QuerySet to a list of dicts for further processing
+    annual_stats_list = list(annual_stats)
+
+    # Aggregate total for all time
+    total_stats = StatistikProdiVisualisasi.objects.aggregate(
+        jml_mhs_lulus35=Sum('jml_mhs_lulus35'),
+        jml_mhs_lulus40=Sum('jml_mhs_lulus40'),
+        jml_mhs_lulus45=Sum('jml_mhs_lulus45'),
+        jml_mhs_lulus50=Sum('jml_mhs_lulus50'),
+        jml_mhs_lulus55=Sum('jml_mhs_lulus55'),
+        jml_mhs_lulus60=Sum('jml_mhs_lulus60')
+    )
+
+    # Convert sums to int and add 'All Time' label
+    all_time_stats = {
+        'tahun': 'All Time',
+        **{key: int(value) for key, value in total_stats.items() if value is not None}
+    }
+
+    # Combine both lists
+    combined_results = annual_stats_list + [all_time_stats]
+
+    list_selected = []
+    for res in list(combined_results) :
+        year = res['tahun']
+        jml_mhs_lulus35 = res['jml_mhs_lulus35']
+        jml_mhs_lulus40 = res['jml_mhs_lulus40']
+        jml_mhs_lulus45 = res['jml_mhs_lulus45']
+        jml_mhs_lulus50 = res['jml_mhs_lulus50']
+        jml_mhs_lulus55 = res['jml_mhs_lulus55']
+        jml_mhs_lulus60 = res['jml_mhs_lulus60']
+        # rounded_avg_grad = round(avg_grad, 1)
+        # print(type(year), rounded_avg_grad) 
+        if year == selected_year : 
+            list_selected.append({"selected_year": year, "jml_mhs_lulus35":jml_mhs_lulus35, "jml_mhs_lulus40":jml_mhs_lulus40, "jml_mhs_lulus45":jml_mhs_lulus45, "jml_mhs_lulus50":jml_mhs_lulus50, "jml_mhs_lulus55":jml_mhs_lulus55, "jml_mhs_lulus60":jml_mhs_lulus60})
+            break
+        elif selected_year == "All" :
+            list_selected.append({"selected_year": "All Time", "jml_mhs_lulus35":jml_mhs_lulus35, "jml_mhs_lulus40":jml_mhs_lulus40, "jml_mhs_lulus45":jml_mhs_lulus45, "jml_mhs_lulus50":jml_mhs_lulus50, "jml_mhs_lulus55":jml_mhs_lulus55, "jml_mhs_lulus60":jml_mhs_lulus60})
+            break
+        else :
+            continue
+    # print(list_selected)
+
+    return JsonResponse(list_selected, safe=False)
 
