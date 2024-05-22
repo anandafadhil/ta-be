@@ -4,8 +4,12 @@ from .models import *
 import json, os, joblib
 from django.views.decorators.csrf import csrf_exempt
 from django.core import serializers
-from django.db.models import Sum, ExpressionWrapper, FloatField, F, IntegerField, CharField
+from django.db import connection
+from django.db.models import Sum, Avg, Value, FloatField, F, IntegerField, CharField, TextField, Case, When
 from django.db.models.functions import Cast
+from collections import defaultdict
+
+
 import pandas as pd
 from sklearn.ensemble import RandomForestClassifier, GradientBoostingClassifier, StackingClassifier
 from xgboost import XGBClassifier
@@ -47,20 +51,16 @@ def get_save_uni_prodi(request):
     return JsonResponse({'data': list(data)})
 
 def get_statistik_prodi(request=None, id_prodi=None):
-    # id_prodi = '9F235AF5-D21C-4901-988C-74201EE4A2DB'
     statistik_prodi = StatistikProdiPrediksi.objects.filter(id_sms=id_prodi).values_list('avg_ipk_sem1', 'avg_ipk_sem2', 'avg_ipk_sem3', 'avg_ipk_sem4', 'avg_sks_sem1', 
                                                                                          'avg_sks_sem2', 'avg_sks_sem3', 'avg_sks_sem4', 'avg_skst_sem1', 'avg_skst_sem2', 
                                                                                          'avg_skst_sem3', 'avg_skst_sem4', 'avg_kenaikan_skst', 'avg_persentase_lulus_tepat_waktu')
     return JsonResponse({'data': list(statistik_prodi)})
 
 def get_prediction(y_pred_stacking_loaded):
-    # Process the prediction result here
-    # For example, you can return a specific message based on the prediction
+
     if y_pred_stacking_loaded == 1:
-        print('yes')
         return JsonResponse({"prediction": True})
     else:
-        print('ga')
         return JsonResponse({"prediction": False})
     
 @csrf_exempt
@@ -157,7 +157,7 @@ def handle_data_sks(request):
 
 
     df = pd.DataFrame(skor_data_array)
-    model_file_path = os.path.join(settings.BASE_DIR, 'predict_PDDikti_be', 'static', 'predict_PDDikti_be', 'model_files', 'stacking_classifier_model_fix.h5')
+    model_file_path = os.path.join(settings.BASE_DIR, 'predict_PDDikti_be', 'static', 'predict_PDDikti_be', 'model_files', 'stacking_clf_pipeline_compressed.pkl')
     stacking_clf_loaded = joblib.load(model_file_path)
     y_pred_stacking_loaded = stacking_clf_loaded.predict(df)
 
@@ -174,7 +174,6 @@ def handle_data_sks(request):
 @csrf_exempt
 def handle_data_bulk(request, id_prodi):
     data = json.loads(request.body)
-
     students_data = []
     for student in data['data']:
         student_data = {
@@ -295,7 +294,7 @@ def handle_data_bulk(request, id_prodi):
 
 
         df = pd.DataFrame(skor_data_array)
-        model_file_path = os.path.join(settings.BASE_DIR, 'predict_PDDikti_be', 'static', 'predict_PDDikti_be', 'model_files', 'stacking_classifier_model_fix.h5')
+        model_file_path = os.path.join(settings.BASE_DIR, 'predict_PDDikti_be', 'static', 'predict_PDDikti_be', 'model_files', 'stacking_clf_pipeline_compressed.pkl')
         stacking_clf_loaded = joblib.load(model_file_path)
         y_pred_stacking_loaded = stacking_clf_loaded.predict(df)
 
@@ -308,15 +307,6 @@ def handle_data_bulk(request, id_prodi):
         
         print("RES", processed_data)
     return JsonResponse({"data": processed_data})
-
-def processed_data_bulk(request):
-    students_data = request.session.get('processed_data')
-    print("AAAA", students_data)
-    if students_data is not None:
-        print('aaa')
-        return JsonResponse({"data": students_data})
-    else:
-        return JsonResponse({"error": "No data founddd"}, status=404)
 
 def get_statistik_lulus_tahun(request):
     # Define your query
@@ -356,7 +346,6 @@ def get_statistik_lulus_tahun(request):
     for row in query_1:
         print(row)
     
-
 def get_avg_grad_time_univ_all(request=None):
     by_year = StatistikProdiVisualisasi.objects.values('tahun_angkatan').annotate(
     avg_grad_time=Cast(
@@ -403,19 +392,7 @@ def get_avg_grad_time_univ_all(request=None):
     print(list_selected)
     return JsonResponse(list_selected, safe=False)
 
-
 def get_ketepatan_grad_time_univ_all(request=None):
-    # by_year = StatistikProdiVisualisasi.objects.values('tahun_angkatan').annotate(
-    # avg_grad_time=Cast(
-    #     (Sum(F('jml_mhs_lulus35') * 3.5) + 
-    #         Sum(F('jml_mhs_lulus40') * 4.0)) / 
-    #     Sum(F('jml_mhs_lulus35') + F('jml_mhs_lulus40') + F('jml_mhs_lulus45') + 
-    #         F('jml_mhs_lulus50') + F('jml_mhs_lulus55') + F('jml_mhs_lulus60')),
-    #     output_field=FloatField()
-    #     )
-    # ).order_by('tahun_angkatan')
-
-    # Calculate overall average
     all_time = StatistikProdiVisualisasi.objects.aggregate(
         avg_grad_time=Cast(
             (Sum(F('jml_mhs_lulus35')) + 
@@ -446,8 +423,7 @@ def get_ketepatan_grad_time_univ_all(request=None):
 def get_prog_grad_time_univ_all(request=None):
     by_year = StatistikProdiVisualisasi.objects.values('tahun_angkatan').annotate(
     avg_grad_time=Cast(
-        (Sum(F('jml_mhs_lulus35')) + 
-            Sum(F('jml_mhs_lulus40'))) *1.0 / 
+        (Sum(F('jml_mhs_lulus35')) + Sum(F('jml_mhs_lulus40'))) *1.0 / 
         Sum(F('jml_mhs_lulus35') + F('jml_mhs_lulus40') + F('jml_mhs_lulus45') + 
             F('jml_mhs_lulus50') + F('jml_mhs_lulus55') + F('jml_mhs_lulus60')),
         output_field=FloatField()
@@ -457,8 +433,7 @@ def get_prog_grad_time_univ_all(request=None):
     # Calculate overall average
     all_time = StatistikProdiVisualisasi.objects.aggregate(
         avg_grad_time=Cast(
-            (Sum(F('jml_mhs_lulus35')) + 
-             Sum(F('jml_mhs_lulus40'))) * 1.0 / 
+            (Sum(F('jml_mhs_lulus35')) + Sum(F('jml_mhs_lulus40'))) * 1.0 / 
             Sum(F('jml_mhs_lulus35') + F('jml_mhs_lulus40') + F('jml_mhs_lulus45') + 
                 F('jml_mhs_lulus50') + F('jml_mhs_lulus55') + F('jml_mhs_lulus60')),
             output_field=FloatField()
@@ -473,9 +448,7 @@ def get_prog_grad_time_univ_all(request=None):
         avg_grad = avg_lulus['avg_grad_time']
         rounded_tepat_grad = round(avg_grad, 4)*100
         rounded_tidak_tepat_grad = round((100 - rounded_tepat_grad), 4)
-        # print(rounded_tepat_grad)
-        # print(rounded_tidak_tepat_grad)
-        # print(type(year), rounded_tepat_grad) 
+
         if year != "All Time" : 
             list_selected.append({"selected_year": year, "tepat_grad":rounded_tepat_grad, "tidak_tepat_grad": rounded_tidak_tepat_grad})
             
@@ -532,12 +505,670 @@ def get_dist_grad_univ_all(request, selected_year_fe) :
         if year == selected_year : 
             list_selected.append({"selected_year": year, "jml_mhs_lulus35":jml_mhs_lulus35, "jml_mhs_lulus40":jml_mhs_lulus40, "jml_mhs_lulus45":jml_mhs_lulus45, "jml_mhs_lulus50":jml_mhs_lulus50, "jml_mhs_lulus55":jml_mhs_lulus55, "jml_mhs_lulus60":jml_mhs_lulus60})
             break
-        elif selected_year == "All" :
+        elif year == "All Time" :
             list_selected.append({"selected_year": "All Time", "jml_mhs_lulus35":jml_mhs_lulus35, "jml_mhs_lulus40":jml_mhs_lulus40, "jml_mhs_lulus45":jml_mhs_lulus45, "jml_mhs_lulus50":jml_mhs_lulus50, "jml_mhs_lulus55":jml_mhs_lulus55, "jml_mhs_lulus60":jml_mhs_lulus60})
             break
         else :
             continue
     # print(list_selected)
+
+    return JsonResponse(list_selected, safe=False)
+
+def get_geochart(request, selected_year_fe):
+    selected_year = selected_year_fe
+
+    # Fetching data with related objects
+    statistik_data = StatistikProdiVisualisasi.objects.select_related('id_sms').values(
+        'uuid', 'id_sms', 'tahun_angkatan', 'jml_mhs_lulus35', 'jml_mhs_lulus40', 'jml_mhs_lulus45', 'jml_mhs_lulus50', 'jml_mhs_lulus55', 'jml_mhs_lulus60'
+    )
+    univ_prodi_data = DaftarUnivProdiVisualisasi.objects.values('id_prodi', 'id_univ', 'nm_univ')
+    wilayah_data = WilayahUniv.objects.values('id_sp', 'provinsi', 'provinsi_label')
+
+    # Create dictionaries for fast lookups
+    univ_prodi_dict = {up['id_prodi']: up for up in univ_prodi_data}
+    wilayah_dict = {wu['id_sp']: wu for wu in wilayah_data}
+
+    res = []
+    for spv in statistik_data:
+        nm_univ = None
+        provinsi = None
+        provinsi_label = None
+        total_lulus35_40 = spv['jml_mhs_lulus35'] + spv['jml_mhs_lulus40']
+        total_lulus = total_lulus35_40 + spv['jml_mhs_lulus45'] + spv['jml_mhs_lulus50'] + spv['jml_mhs_lulus55'] + spv['jml_mhs_lulus60']
+        persentase = float(total_lulus35_40 / total_lulus) if total_lulus > 0 else 0
+
+        # left join dupv
+        dupv = univ_prodi_dict.get(spv['id_sms'])
+        if dupv:
+            nm_univ = dupv['nm_univ']
+
+            # left join wu
+            wu = wilayah_dict.get(dupv['id_univ'])
+            if wu and wu['provinsi'] is not None:
+                provinsi = wu['provinsi']
+                provinsi_label = wu['provinsi_label']
+
+                res.append({
+                    'uuid': spv['uuid'],
+                    'per': persentase,
+                    'thn': spv['tahun_angkatan'],
+                    'id_sms': spv['id_sms'],
+                    'nm_univ': nm_univ,
+                    'provinsi': provinsi,
+                    'provinsi_label': provinsi_label,
+                    'jml_mhs_lulus35': spv['jml_mhs_lulus35'],
+                    'jml_mhs_lulus40': spv['jml_mhs_lulus40'],
+                    'jml_mhs_lulus45': spv['jml_mhs_lulus45'],
+                    'jml_mhs_lulus50': spv['jml_mhs_lulus50'],
+                    'jml_mhs_lulus55': spv['jml_mhs_lulus55'],
+                    'jml_mhs_lulus60': spv['jml_mhs_lulus60']
+                })
+
+    grouped_data = defaultdict(lambda: {
+        'jml_mhs_lulus35': 0,
+        'jml_mhs_lulus40': 0,
+        'jml_mhs_lulus45': 0,
+        'jml_mhs_lulus50': 0,
+        'jml_mhs_lulus55': 0,
+        'jml_mhs_lulus60': 0
+    })
+
+    result_all = []
+    if selected_year == "All":
+        for entry in res:
+            key = (entry['provinsi'], entry['provinsi_label'])
+            grouped_data[key]['jml_mhs_lulus35'] += entry['jml_mhs_lulus35']
+            grouped_data[key]['jml_mhs_lulus40'] += entry['jml_mhs_lulus40']
+            grouped_data[key]['jml_mhs_lulus45'] += entry['jml_mhs_lulus45']
+            grouped_data[key]['jml_mhs_lulus50'] += entry['jml_mhs_lulus50']
+            grouped_data[key]['jml_mhs_lulus55'] += entry['jml_mhs_lulus55']
+            grouped_data[key]['jml_mhs_lulus60'] += entry['jml_mhs_lulus60']
+
+        # Calculate percentage for each group
+        for key, counts in grouped_data.items():
+            provinsi, provinsi_label = key
+            total_lulus35_40 = counts['jml_mhs_lulus35'] + counts['jml_mhs_lulus40']
+            total_lulus = total_lulus35_40 + counts['jml_mhs_lulus45'] + counts['jml_mhs_lulus50'] + counts['jml_mhs_lulus55'] + counts['jml_mhs_lulus60']
+            persentase = float(total_lulus35_40 / total_lulus) if total_lulus > 0 else 0
+            result_all.append({
+                'provinsi': provinsi,
+                'provinsi_label': provinsi_label,
+                'tahun_angkatan': "All Time",
+                'persentase': persentase
+            })
+    else:
+        for entry in res:
+            key = (entry['provinsi'], entry['provinsi_label'], entry['thn'])
+            grouped_data[key]['jml_mhs_lulus35'] += entry['jml_mhs_lulus35']
+            grouped_data[key]['jml_mhs_lulus40'] += entry['jml_mhs_lulus40']
+            grouped_data[key]['jml_mhs_lulus45'] += entry['jml_mhs_lulus45']
+            grouped_data[key]['jml_mhs_lulus50'] += entry['jml_mhs_lulus50']
+            grouped_data[key]['jml_mhs_lulus55'] += entry['jml_mhs_lulus55']
+            grouped_data[key]['jml_mhs_lulus60'] += entry['jml_mhs_lulus60']
+
+        for key, counts in grouped_data.items():
+            provinsi, provinsi_label, tahun_angkatan = key
+            total_lulus35_40 = counts['jml_mhs_lulus35'] + counts['jml_mhs_lulus40']
+            total_lulus = total_lulus35_40 + counts['jml_mhs_lulus45'] + counts['jml_mhs_lulus50'] + counts['jml_mhs_lulus55'] + counts['jml_mhs_lulus60']
+            persentase = float(total_lulus35_40 / total_lulus) if total_lulus > 0 else 0
+
+            if tahun_angkatan == int(selected_year):
+                result_all.append({
+                    'provinsi': provinsi,
+                    'provinsi_label': provinsi_label,
+                    'tahun_angkatan': tahun_angkatan,
+                    'persentase': persentase
+                })
+
+    return JsonResponse(result_all, safe=False)
+
+def get_univ_info(request, id_univ):
+    univ_info = DaftarUnivProdiVisualisasi.objects.filter(id_univ = id_univ).values('nm_univ', 'tahun_berdiri_univ', 'rank_univ').first()
+    print(univ_info)
+    return JsonResponse(univ_info, safe=False)
+
+def get_avg_grad_time_univ_filter(request, id_univ):
+    statistik_data = StatistikProdiVisualisasi.objects.select_related('id_sms').values(
+        'uuid', 'id_sms', 'tahun_angkatan', 'jml_mhs_lulus35', 'jml_mhs_lulus40', 'jml_mhs_lulus45', 'jml_mhs_lulus50', 'jml_mhs_lulus55', 'jml_mhs_lulus60'
+    )
+    univ_prodi_data = DaftarUnivProdiVisualisasi.objects.filter(id_univ=id_univ).values('id_prodi', 'id_univ', 'nm_univ')
+
+    # Create dictionaries for fast lookups
+    univ_prodi_dict = {up['id_prodi']: up for up in univ_prodi_data}
+    
+    res = []
+    for spv in statistik_data:
+        nm_univ = None
+        total_lulus_atas = spv['jml_mhs_lulus35']*3.5 + spv['jml_mhs_lulus40'] *4.0 + spv['jml_mhs_lulus45']*4.5 + spv['jml_mhs_lulus50'] *5.0 + spv['jml_mhs_lulus55']*5.5 + spv['jml_mhs_lulus60'] *6.0
+        total_lulus = spv['jml_mhs_lulus35'] + spv['jml_mhs_lulus40'] + spv['jml_mhs_lulus45'] + spv['jml_mhs_lulus50'] + spv['jml_mhs_lulus55'] + spv['jml_mhs_lulus60']
+        persentase = float(total_lulus_atas / total_lulus) if total_lulus > 0 else 0
+
+        # left join dupv
+        dupv = univ_prodi_dict.get(spv['id_sms'])
+        if dupv:
+            nm_univ = dupv['nm_univ']
+            id_univ = dupv['id_univ']
+            if id_univ == id_univ :
+                res.append({
+                    'uuid': spv['uuid'],
+                    'thn': spv['tahun_angkatan'],
+                    'id_sms': spv['id_sms'],
+                    'id_univ': id_univ,
+                    'nm_univ': nm_univ,
+                    'total_lulus' : total_lulus,
+                    'total_lulus_atas': total_lulus_atas,
+                    'jml_mhs_lulus35': spv['jml_mhs_lulus35'],
+                    'jml_mhs_lulus40': spv['jml_mhs_lulus40'],
+                    'jml_mhs_lulus45': spv['jml_mhs_lulus45'],
+                    'jml_mhs_lulus50': spv['jml_mhs_lulus50'],
+                    'jml_mhs_lulus55': spv['jml_mhs_lulus55'],
+                    'jml_mhs_lulus60': spv['jml_mhs_lulus60']
+                })
+            else :
+                continue
+
+        total_aggregate = {
+        'jml_mhs_lulus35': 0,
+        'jml_mhs_lulus40': 0,
+        'jml_mhs_lulus45': 0,
+        'jml_mhs_lulus50': 0,
+        'jml_mhs_lulus55': 0,
+        'jml_mhs_lulus60': 0,
+        'total_lulus_atas': 0,
+        'total_lulus': 0
+        }
+
+    result_all = []
+    for entry in res:
+        total_aggregate['jml_mhs_lulus35'] += entry['jml_mhs_lulus35']
+        total_aggregate['jml_mhs_lulus40'] += entry['jml_mhs_lulus40']
+        total_aggregate['jml_mhs_lulus45'] += entry['jml_mhs_lulus45']
+        total_aggregate['jml_mhs_lulus50'] += entry['jml_mhs_lulus50']
+        total_aggregate['jml_mhs_lulus55'] += entry['jml_mhs_lulus55']
+        total_aggregate['jml_mhs_lulus60'] += entry['jml_mhs_lulus60']
+        total_aggregate['total_lulus_atas'] += entry['total_lulus_atas']
+        total_aggregate['total_lulus'] += entry['total_lulus']
+    
+    total_aggregate['persentase'] = float(total_aggregate['total_lulus_atas'] / total_aggregate['total_lulus']) if total_aggregate['total_lulus'] > 0 else 0
+
+    result_all.append({
+        'tahun_angkatan': "All Time",
+        'persentase': total_aggregate['persentase'],
+    })
+
+    return JsonResponse(result_all, safe=False)
+
+def get_prodi_ranking(request, selected_id_univ):
+    statistik_data = StatistikProdiVisualisasi.objects.select_related('id_sms').values(
+        'uuid', 'id_sms', 'tahun_angkatan', 'jml_mhs_lulus35', 'jml_mhs_lulus40', 'jml_mhs_lulus45', 'jml_mhs_lulus50', 'jml_mhs_lulus55', 'jml_mhs_lulus60'
+    )
+    univ_prodi_data = DaftarUnivProdiVisualisasi.objects.values('id_prodi', 'id_univ', 'nm_univ', 'nm_prodi')
+
+    # Create dictionaries for fast lookups
+    univ_prodi_dict = {up['id_prodi']: up for up in univ_prodi_data}
+
+    res = []
+    for spv in statistik_data:
+        nm_univ = None
+        total_lulus35_40 = spv['jml_mhs_lulus35'] + spv['jml_mhs_lulus40']
+        total_lulus = total_lulus35_40 + spv['jml_mhs_lulus45'] + spv['jml_mhs_lulus50'] + spv['jml_mhs_lulus55'] + spv['jml_mhs_lulus60']
+        persentase = float(total_lulus35_40 / total_lulus) if total_lulus > 0 else 0
+
+        # left join dupv
+        dupv = univ_prodi_dict.get(spv['id_sms'])
+        if dupv:
+            nm_univ = dupv['nm_univ']
+            id_univ = dupv['id_univ']
+            nm_prodi = dupv['nm_prodi']
+            id_prodi = dupv['id_prodi']
+            if id_univ == selected_id_univ: 
+                res.append({
+                    'uuid': spv['uuid'],
+                    'per': persentase,
+                    'thn': spv['tahun_angkatan'],
+                    'id_sms': spv['id_sms'],
+                    'nm_univ': nm_univ,
+                    'id_prodi': id_prodi,
+                    'nm_prodi': nm_prodi,
+                    'jml_mhs_lulus35': spv['jml_mhs_lulus35'],
+                    'jml_mhs_lulus40': spv['jml_mhs_lulus40'],
+                    'jml_mhs_lulus45': spv['jml_mhs_lulus45'],
+                    'jml_mhs_lulus50': spv['jml_mhs_lulus50'],
+                    'jml_mhs_lulus55': spv['jml_mhs_lulus55'],
+                    'jml_mhs_lulus60': spv['jml_mhs_lulus60']
+                })
+
+    grouped_data = defaultdict(lambda: {
+        'jml_mhs_lulus35': 0,
+        'jml_mhs_lulus40': 0,
+        'jml_mhs_lulus45': 0,
+        'jml_mhs_lulus50': 0,
+        'jml_mhs_lulus55': 0,
+        'jml_mhs_lulus60': 0
+    })
+
+    result_all = []
+
+    for entry in res:
+        key = (entry['id_prodi'], entry['nm_prodi'])
+        grouped_data[key]['jml_mhs_lulus35'] += entry['jml_mhs_lulus35']
+        grouped_data[key]['jml_mhs_lulus40'] += entry['jml_mhs_lulus40']
+        grouped_data[key]['jml_mhs_lulus45'] += entry['jml_mhs_lulus45']
+        grouped_data[key]['jml_mhs_lulus50'] += entry['jml_mhs_lulus50']
+        grouped_data[key]['jml_mhs_lulus55'] += entry['jml_mhs_lulus55']
+        grouped_data[key]['jml_mhs_lulus60'] += entry['jml_mhs_lulus60']
+
+    for key, counts in grouped_data.items():
+        id_prodi, nm_prodi = key
+        total_lulus35_40 = counts['jml_mhs_lulus35'] + counts['jml_mhs_lulus40']
+        total_lulus = total_lulus35_40 + counts['jml_mhs_lulus45'] + counts['jml_mhs_lulus50'] + counts['jml_mhs_lulus55'] + counts['jml_mhs_lulus60']
+        persentase = float(total_lulus35_40 / total_lulus) if total_lulus > 0 else 0
+
+        result_all.append({
+            'id_prodi': id_prodi,
+            'nm_prodi': nm_prodi,
+            'persentase': persentase
+        })
+    count = 0
+    result_all_sorted = sorted(result_all, key=lambda x: x['persentase'], reverse=True)
+    for pos in result_all_sorted:
+        count += 1
+        pos['position'] = count
+
+    return JsonResponse(result_all_sorted, safe=False)
+
+def get_dist_grad_univ_filter(request, selected_id_univ, selected_year_fe) :
+    annual_stats = StatistikProdiVisualisasi.objects.values('tahun_angkatan').annotate(
+    tahun=Cast('tahun_angkatan', output_field=CharField()),
+    id_sms=Cast('id_sms', output_field=TextField()),
+    jml_mhs_lulus35=Cast(Sum('jml_mhs_lulus35'), output_field=IntegerField()),
+    jml_mhs_lulus40=Cast(Sum('jml_mhs_lulus40'), output_field=IntegerField()),
+    jml_mhs_lulus45=Cast(Sum('jml_mhs_lulus45'), output_field=IntegerField()),
+    jml_mhs_lulus50=Cast(Sum('jml_mhs_lulus50'), output_field=IntegerField()),
+    jml_mhs_lulus55=Cast(Sum('jml_mhs_lulus55'), output_field=IntegerField()),
+    jml_mhs_lulus60=Cast(Sum('jml_mhs_lulus60'), output_field=IntegerField())
+    ).order_by('tahun_angkatan')
+
+    univ_prodi_data = DaftarUnivProdiVisualisasi.objects.values('id_prodi', 'id_univ', 'nm_univ', 'nm_prodi')
+    univ_prodi_dict = {up['id_prodi']: up for up in univ_prodi_data}
+
+    res=[]
+    for spv in annual_stats :
+        dupv = univ_prodi_dict.get(spv['id_sms'])
+        if dupv:
+            nm_univ = dupv['nm_univ']
+            id_univ = dupv['id_univ']
+            nm_prodi = dupv['nm_prodi']
+            id_prodi = dupv['id_prodi']
+            if id_univ == selected_id_univ: 
+                res.append({
+                    'thn': spv['tahun_angkatan'],
+                    'id_sms': spv['id_sms'],
+                    'nm_univ': nm_univ,
+                    'id_prodi': id_prodi,
+                    'nm_prodi': nm_prodi,
+                    'jml_mhs_lulus35': spv['jml_mhs_lulus35'],
+                    'jml_mhs_lulus40': spv['jml_mhs_lulus40'],
+                    'jml_mhs_lulus45': spv['jml_mhs_lulus45'],
+                    'jml_mhs_lulus50': spv['jml_mhs_lulus50'],
+                    'jml_mhs_lulus55': spv['jml_mhs_lulus55'],
+                    'jml_mhs_lulus60': spv['jml_mhs_lulus60']
+                })
+
+    grouped_data = defaultdict(lambda: {
+        'jml_mhs_lulus35': 0,
+        'jml_mhs_lulus40': 0,
+        'jml_mhs_lulus45': 0,
+        'jml_mhs_lulus50': 0,
+        'jml_mhs_lulus55': 0,
+        'jml_mhs_lulus60': 0
+    })
+
+    result_year = []
+    result_all = []
+    total35 = 0
+    total40 = 0
+    total45 = 0
+    total50 = 0
+    total55 = 0
+    total60 = 0
+    for entry in res:
+        key = (entry['thn'])
+        grouped_data[key]['jml_mhs_lulus35'] += entry['jml_mhs_lulus35']
+        grouped_data[key]['jml_mhs_lulus40'] += entry['jml_mhs_lulus40']
+        grouped_data[key]['jml_mhs_lulus45'] += entry['jml_mhs_lulus45']
+        grouped_data[key]['jml_mhs_lulus50'] += entry['jml_mhs_lulus50']
+        grouped_data[key]['jml_mhs_lulus55'] += entry['jml_mhs_lulus55']
+        grouped_data[key]['jml_mhs_lulus60'] += entry['jml_mhs_lulus60']
+    
+    for key, counts in grouped_data.items():
+        tahun_angkatan = key
+        total35 += counts['jml_mhs_lulus35']
+        total40 += counts['jml_mhs_lulus40']
+        total45 += counts['jml_mhs_lulus45']
+        total50 += counts['jml_mhs_lulus50']
+        total55 += counts['jml_mhs_lulus55']
+        total60 += counts['jml_mhs_lulus60']
+
+        if selected_year_fe!= 'All' and tahun_angkatan == int(selected_year_fe):
+            result_year.append({
+                'tahun_angkatan': tahun_angkatan,
+                'jml_mhs_lulus_35': counts['jml_mhs_lulus35'],
+                'jml_mhs_lulus_40': counts['jml_mhs_lulus40'],
+                'jml_mhs_lulus_45': counts['jml_mhs_lulus45'],
+                'jml_mhs_lulus_50': counts['jml_mhs_lulus50'],
+                'jml_mhs_lulus_55': counts['jml_mhs_lulus55'],
+                'jml_mhs_lulus_60': counts['jml_mhs_lulus60'],
+            })
+            break
+        else :
+            continue
+        
+    result_all.append({
+        'tahun_angkatan': "All Time",
+        'jml_mhs_lulus_35':total35,
+        'jml_mhs_lulus_40':total40,
+        'jml_mhs_lulus_45':total45,
+        'jml_mhs_lulus_50':total50,
+        'jml_mhs_lulus_55':total55,
+        'jml_mhs_lulus_60':total60,
+    })
+
+    if selected_year_fe == 'All' :
+        return JsonResponse(result_all, safe=False)
+    else :
+        return JsonResponse(result_year, safe=False)
+
+def get_ketepatan_grad_time_univ_filter(request, selected_id_univ):
+    # selected_id_univ = '0D1E63E9-CBFB-4546-A242-875C310083A5'
+    statistik_data = StatistikProdiVisualisasi.objects.select_related('id_sms').values(
+        'uuid', 'id_sms', 'tahun_angkatan', 'jml_mhs_lulus35', 'jml_mhs_lulus40', 'jml_mhs_lulus45', 'jml_mhs_lulus50', 'jml_mhs_lulus55', 'jml_mhs_lulus60'
+    )
+    univ_prodi_data = DaftarUnivProdiVisualisasi.objects.values('id_prodi', 'id_univ', 'nm_univ', 'nm_prodi')
+    univ_prodi_dict = {up['id_prodi']: up for up in univ_prodi_data}
+    print('all', statistik_data)
+    res=[]
+    res_all=[]
+    for spv in statistik_data :
+        dupv = univ_prodi_dict.get(spv['id_sms'])
+        if dupv:
+            nm_univ = dupv['nm_univ']
+            id_univ = dupv['id_univ']
+            nm_prodi = dupv['nm_prodi']
+            id_prodi = dupv['id_prodi']
+            total_lulus_atas = (spv['jml_mhs_lulus35'] + spv['jml_mhs_lulus40'] )*1.0
+            total_lulus = spv['jml_mhs_lulus35'] + spv['jml_mhs_lulus40'] + spv['jml_mhs_lulus45'] + spv['jml_mhs_lulus50'] + spv['jml_mhs_lulus55'] + spv['jml_mhs_lulus60']
+            if id_univ == selected_id_univ: 
+                res.append({
+                    'thn': spv['tahun_angkatan'],
+                    'id_sms': spv['id_sms'],
+                    'nm_univ': nm_univ,
+                    'id_prodi': id_prodi,
+                    'nm_prodi': nm_prodi,
+                    'total_lulus' : total_lulus,
+                    'total_lulus_atas': total_lulus_atas,
+                    'jml_mhs_lulus35': spv['jml_mhs_lulus35'],
+                    'jml_mhs_lulus40': spv['jml_mhs_lulus40'],
+                    'jml_mhs_lulus45': spv['jml_mhs_lulus45'],
+                    'jml_mhs_lulus50': spv['jml_mhs_lulus50'],
+                    'jml_mhs_lulus55': spv['jml_mhs_lulus55'],
+                    'jml_mhs_lulus60': spv['jml_mhs_lulus60']
+                })
+
+    # grouped_data = defaultdict(lambda: {
+    #     'jml_mhs_lulus35': 0,
+    #     'jml_mhs_lulus40': 0,
+    #     'jml_mhs_lulus45': 0,
+    #     'jml_mhs_lulus50': 0,
+    #     'jml_mhs_lulus55': 0,
+    #     'jml_mhs_lulus60': 0
+    # })
+
+    total_aggregate = {
+        'jml_mhs_lulus35': 0,
+        'jml_mhs_lulus40': 0,
+        'jml_mhs_lulus45': 0,
+        'jml_mhs_lulus50': 0,
+        'jml_mhs_lulus55': 0,
+        'jml_mhs_lulus60': 0,
+        'total_lulus_atas': 0,
+        'total_lulus': 0
+        }
+    for entry in res:
+        key = (entry['thn'])
+        # grouped_data[key]['jml_mhs_lulus35'] += entry['jml_mhs_lulus35']
+        # grouped_data[key]['jml_mhs_lulus40'] += entry['jml_mhs_lulus40']
+        # grouped_data[key]['jml_mhs_lulus45'] += entry['jml_mhs_lulus45']
+        # grouped_data[key]['jml_mhs_lulus50'] += entry['jml_mhs_lulus50']
+        # grouped_data[key]['jml_mhs_lulus55'] += entry['jml_mhs_lulus55']
+        # grouped_data[key]['jml_mhs_lulus60'] += entry['jml_mhs_lulus60']
+        total_aggregate['jml_mhs_lulus35'] += entry['jml_mhs_lulus35']
+        total_aggregate['jml_mhs_lulus40'] += entry['jml_mhs_lulus40']
+        total_aggregate['jml_mhs_lulus45'] += entry['jml_mhs_lulus45']
+        total_aggregate['jml_mhs_lulus50'] += entry['jml_mhs_lulus50']
+        total_aggregate['jml_mhs_lulus55'] += entry['jml_mhs_lulus55']
+        total_aggregate['jml_mhs_lulus60'] += entry['jml_mhs_lulus60']
+        total_aggregate['total_lulus_atas'] += entry['total_lulus_atas']
+        total_aggregate['total_lulus'] += entry['total_lulus']
+    
+    # for key, counts in grouped_data.items():
+    #     tahun_angkatan = key
+    #     total_lulus_atas = (counts['jml_mhs_lulus35'] + counts['jml_mhs_lulus40'] )*1.0
+    #     total_lulus = counts['jml_mhs_lulus35'] + counts['jml_mhs_lulus40'] + counts['jml_mhs_lulus45'] + counts['jml_mhs_lulus50'] + counts['jml_mhs_lulus55'] + counts['jml_mhs_lulus60']
+    #     persentase = float(total_lulus_atas / total_lulus) if total_lulus > 0 else 0
+    #     res_all.append({
+    #         'tahun_angkatan':tahun_angkatan,
+    #         'persentase':persentase,
+    #     })
+
+    total_aggregate['persentase'] = float(total_aggregate['total_lulus_atas'] / total_aggregate['total_lulus']) if total_aggregate['total_lulus'] > 0 else 0
+    res_all.append({
+        'tahun_angkatan': "All Time",
+        'persentase': total_aggregate['persentase'],
+    })
+    return JsonResponse(res_all, safe=False)
+
+def get_prog_grad_time_univ_filter(request, selected_id_univ):
+    # selected_id_univ = '0D1E63E9-CBFB-4546-A242-875C310083A5'
+    statistik_data = StatistikProdiVisualisasi.objects.select_related('id_sms').values(
+        'uuid', 'id_sms', 'tahun_angkatan', 'jml_mhs_lulus35', 'jml_mhs_lulus40', 'jml_mhs_lulus45', 'jml_mhs_lulus50', 'jml_mhs_lulus55', 'jml_mhs_lulus60'
+    )
+    univ_prodi_data = DaftarUnivProdiVisualisasi.objects.values('id_prodi', 'id_univ', 'nm_univ', 'nm_prodi')
+    univ_prodi_dict = {up['id_prodi']: up for up in univ_prodi_data}
+    print('all', statistik_data)
+    res=[]
+    res_all=[]
+    for spv in statistik_data :
+        dupv = univ_prodi_dict.get(spv['id_sms'])
+        if dupv:
+            nm_univ = dupv['nm_univ']
+            id_univ = dupv['id_univ']
+            nm_prodi = dupv['nm_prodi']
+            id_prodi = dupv['id_prodi']
+            total_lulus_atas = (spv['jml_mhs_lulus35'] + spv['jml_mhs_lulus40'] )*1.0
+            total_lulus = spv['jml_mhs_lulus35'] + spv['jml_mhs_lulus40'] + spv['jml_mhs_lulus45'] + spv['jml_mhs_lulus50'] + spv['jml_mhs_lulus55'] + spv['jml_mhs_lulus60']
+            if id_univ == selected_id_univ: 
+                res.append({
+                    'thn': spv['tahun_angkatan'],
+                    'id_sms': spv['id_sms'],
+                    'nm_univ': nm_univ,
+                    'id_prodi': id_prodi,
+                    'nm_prodi': nm_prodi,
+                    'total_lulus' : total_lulus,
+                    'total_lulus_atas': total_lulus_atas,
+                    'jml_mhs_lulus35': spv['jml_mhs_lulus35'],
+                    'jml_mhs_lulus40': spv['jml_mhs_lulus40'],
+                    'jml_mhs_lulus45': spv['jml_mhs_lulus45'],
+                    'jml_mhs_lulus50': spv['jml_mhs_lulus50'],
+                    'jml_mhs_lulus55': spv['jml_mhs_lulus55'],
+                    'jml_mhs_lulus60': spv['jml_mhs_lulus60']
+                })
+
+    grouped_data = defaultdict(lambda: {
+        'jml_mhs_lulus35': 0,
+        'jml_mhs_lulus40': 0,
+        'jml_mhs_lulus45': 0,
+        'jml_mhs_lulus50': 0,
+        'jml_mhs_lulus55': 0,
+        'jml_mhs_lulus60': 0
+    })
+
+    for entry in res:
+        key = (entry['thn'])
+        grouped_data[key]['jml_mhs_lulus35'] += entry['jml_mhs_lulus35']
+        grouped_data[key]['jml_mhs_lulus40'] += entry['jml_mhs_lulus40']
+        grouped_data[key]['jml_mhs_lulus45'] += entry['jml_mhs_lulus45']
+        grouped_data[key]['jml_mhs_lulus50'] += entry['jml_mhs_lulus50']
+        grouped_data[key]['jml_mhs_lulus55'] += entry['jml_mhs_lulus55']
+        grouped_data[key]['jml_mhs_lulus60'] += entry['jml_mhs_lulus60']
+       
+    
+    for key, counts in grouped_data.items():
+        tahun_angkatan = key
+        total_lulus_atas = (counts['jml_mhs_lulus35'] + counts['jml_mhs_lulus40'] )*1.0
+        total_lulus = counts['jml_mhs_lulus35'] + counts['jml_mhs_lulus40'] + counts['jml_mhs_lulus45'] + counts['jml_mhs_lulus50'] + counts['jml_mhs_lulus55'] + counts['jml_mhs_lulus60']
+        persentase = float(total_lulus_atas / total_lulus) if total_lulus > 0 else 0
+        res_all.append({
+            'tahun_angkatan':tahun_angkatan,
+            'persentase':persentase,
+        })
+
+    return JsonResponse(res_all, safe=False)
+
+def get_prodi_info(request, id_prodi):
+    prodi_info = DaftarUnivProdiVisualisasi.objects.filter(id_prodi = id_prodi).values('nm_prodi', 'tahun_berdiri_prodi', 'rank_prodi').first()
+    return JsonResponse(prodi_info, safe=False)
+
+def get_avg_ipk(request, id_prodi):
+    by_year = StatistikProdiVisualisasi.objects.filter(id_sms = id_prodi).values('tahun_angkatan', 'avg_ipk_overall', 'avg_ipk_tepat_waktu', 'avg_ipk_telat')
+    all_time = StatistikProdiVisualisasi.objects.filter(id_sms=id_prodi).aggregate(
+        avg_ipk_overall=Avg('avg_ipk_overall'),
+        avg_ipk_tepat_waktu=Avg('avg_ipk_tepat_waktu'),
+        avg_ipk_telat=Avg('avg_ipk_telat')
+    ) 
+    results = list(by_year) + [{'tahun_angkatan': 'All Time', **all_time}]
+
+    return JsonResponse(results, safe=False)
+
+def get_avg_sks(request, id_prodi):
+    all_time = StatistikProdiVisualisasi.objects.filter(
+        id_sms=id_prodi
+    ).aggregate(
+        avg_sks_sem1=Avg(Case(When(avg_sks_sem1__gt=0, then=F('avg_sks_sem1')), default=None)),
+        avg_sks_sem2=Avg(Case(When(avg_sks_sem2__gt=0, then=F('avg_sks_sem2')), default=None)),
+        avg_sks_sem3=Avg(Case(When(avg_sks_sem3__gt=0, then=F('avg_sks_sem3')), default=None)),
+        avg_sks_sem4=Avg(Case(When(avg_sks_sem4__gt=0, then=F('avg_sks_sem4')), default=None)),
+        avg_sks_sem5=Avg(Case(When(avg_sks_sem5__gt=0, then=F('avg_sks_sem5')), default=None)),
+        avg_sks_sem6=Avg(Case(When(avg_sks_sem6__gt=0, then=F('avg_sks_sem6')), default=None)),
+        avg_sks_sem7=Avg(Case(When(avg_sks_sem7__gt=0, then=F('avg_sks_sem7')), default=None)),
+        avg_sks_sem8=Avg(Case(When(avg_sks_sem8__gt=0, then=F('avg_sks_sem8')), default=None))
+    )
+
+    all_time['tahun'] = 'All Time'
+    result = [all_time]
+
+    for item in result:
+        for key, value in item.items():
+            if value is None:
+                item[key] = 0
+
+    return JsonResponse(result, safe=False)
+
+def get_avg_grad_time_prodi_filter(request, id_prodi):
+    all_time = StatistikProdiVisualisasi.objects.filter(id_sms = id_prodi).aggregate(
+        avg_grad_time=Cast(
+            (Sum(F('jml_mhs_lulus35') * 3.5) + 
+             Sum(F('jml_mhs_lulus40') * 4.0) + 
+             Sum(F('jml_mhs_lulus45') * 4.5) + 
+             Sum(F('jml_mhs_lulus50') * 5.0) + 
+             Sum(F('jml_mhs_lulus55') * 5.5) + 
+             Sum(F('jml_mhs_lulus60') * 6.0)) / 
+            Sum(F('jml_mhs_lulus35') + F('jml_mhs_lulus40') + F('jml_mhs_lulus45') + 
+                F('jml_mhs_lulus50') + F('jml_mhs_lulus55') + F('jml_mhs_lulus60')),
+            output_field=FloatField()
+        )
+    )
+
+    return JsonResponse(all_time, safe=False)
+
+def get_ketepatan_grad_time_prodi_filter(request, id_prodi):
+    all_time = StatistikProdiVisualisasi.objects.filter(id_sms = id_prodi).aggregate(
+        avg_grad_time=Cast(
+            (Sum(F('jml_mhs_lulus35')) + 
+             Sum(F('jml_mhs_lulus40'))) * 1.0 / 
+            Sum(F('jml_mhs_lulus35') + F('jml_mhs_lulus40') + F('jml_mhs_lulus45') + 
+                F('jml_mhs_lulus50') + F('jml_mhs_lulus55') + F('jml_mhs_lulus60')),
+            output_field=FloatField()
+        )
+    )
+
+    print(all_time)
+    return JsonResponse(all_time, safe=False)
+
+def get_prog_grad_time_prodi_filter(request, id_prodi):
+    by_year = StatistikProdiVisualisasi.objects.filter(id_sms = id_prodi).values('tahun_angkatan').annotate(
+    avg_grad_time=Cast(
+        (Sum(F('jml_mhs_lulus35')) + Sum(F('jml_mhs_lulus40'))) *1.0 / 
+        Sum(F('jml_mhs_lulus35') + F('jml_mhs_lulus40') + F('jml_mhs_lulus45') + 
+            F('jml_mhs_lulus50') + F('jml_mhs_lulus55') + F('jml_mhs_lulus60')),
+        output_field=FloatField()
+        )
+    ).order_by('tahun_angkatan')
+
+    return JsonResponse(list(by_year), safe=False)
+
+def get_dist_grad_prodi_filter(request, id_prodi, selected_year):
+    annual_stats = StatistikProdiVisualisasi.objects.filter(id_sms = id_prodi).values('tahun_angkatan').annotate(
+    tahun=Cast('tahun_angkatan', output_field=CharField()),
+    jml_mhs_lulus35=Cast(Sum('jml_mhs_lulus35'), output_field=IntegerField()),
+    jml_mhs_lulus40=Cast(Sum('jml_mhs_lulus40'), output_field=IntegerField()),
+    jml_mhs_lulus45=Cast(Sum('jml_mhs_lulus45'), output_field=IntegerField()),
+    jml_mhs_lulus50=Cast(Sum('jml_mhs_lulus50'), output_field=IntegerField()),
+    jml_mhs_lulus55=Cast(Sum('jml_mhs_lulus55'), output_field=IntegerField()),
+    jml_mhs_lulus60=Cast(Sum('jml_mhs_lulus60'), output_field=IntegerField())
+    ).order_by('tahun_angkatan')
+
+    # Convert QuerySet to a list of dicts for further processing
+    annual_stats_list = list(annual_stats)
+
+    # Aggregate total for all time
+    total_stats = StatistikProdiVisualisasi.objects.filter(id_sms = id_prodi).aggregate(
+        jml_mhs_lulus35=Sum('jml_mhs_lulus35'),
+        jml_mhs_lulus40=Sum('jml_mhs_lulus40'),
+        jml_mhs_lulus45=Sum('jml_mhs_lulus45'),
+        jml_mhs_lulus50=Sum('jml_mhs_lulus50'),
+        jml_mhs_lulus55=Sum('jml_mhs_lulus55'),
+        jml_mhs_lulus60=Sum('jml_mhs_lulus60')
+    )
+    print(total_stats)
+
+    # Convert sums to int and add 'All Time' label
+    all_time_stats = {
+        'tahun': 'All Time',
+        **{key: int(value) for key, value in total_stats.items() if value is not None}
+    }
+
+    # Combine both lists
+    combined_results = annual_stats_list + [all_time_stats]
+
+    list_selected = []
+    for res in list(combined_results) :
+        year = res['tahun']
+        jml_mhs_lulus35 = res['jml_mhs_lulus35']
+        jml_mhs_lulus40 = res['jml_mhs_lulus40']
+        jml_mhs_lulus45 = res['jml_mhs_lulus45']
+        jml_mhs_lulus50 = res['jml_mhs_lulus50']
+        jml_mhs_lulus55 = res['jml_mhs_lulus55']
+        jml_mhs_lulus60 = res['jml_mhs_lulus60']
+
+        if year == selected_year : 
+            list_selected.append({"selected_year": year, "jml_mhs_lulus35":jml_mhs_lulus35, "jml_mhs_lulus40":jml_mhs_lulus40, "jml_mhs_lulus45":jml_mhs_lulus45, "jml_mhs_lulus50":jml_mhs_lulus50, "jml_mhs_lulus55":jml_mhs_lulus55, "jml_mhs_lulus60":jml_mhs_lulus60})
+            break
+        elif year == "All Time" :
+            list_selected.append({"selected_year": "All Time", "jml_mhs_lulus35":jml_mhs_lulus35, "jml_mhs_lulus40":jml_mhs_lulus40, "jml_mhs_lulus45":jml_mhs_lulus45, "jml_mhs_lulus50":jml_mhs_lulus50, "jml_mhs_lulus55":jml_mhs_lulus55, "jml_mhs_lulus60":jml_mhs_lulus60})
+            break
+        else :
+            continue
 
     return JsonResponse(list_selected, safe=False)
 
