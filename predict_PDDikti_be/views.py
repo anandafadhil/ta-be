@@ -197,8 +197,6 @@ def handle_data_bulk(request, id_prodi):
         PROCESSING DATA HERE
         MODEL
         """
-    print("ceK", list(students_data))
-    print("data1", len(students_data))
     processed_data = []
     for splitted_stud in students_data :
         SKS_sem_1 = splitted_stud['SKS_sem_1']
@@ -305,7 +303,6 @@ def handle_data_bulk(request, id_prodi):
             result = "Tidak Tepat Waktu"
             processed_data.append({"NPM": NPM, "RES":result})
         
-        print("RES", processed_data)
     return JsonResponse({"data": processed_data})
 
 def get_statistik_lulus_tahun(request):
@@ -1172,3 +1169,107 @@ def get_dist_grad_prodi_filter(request, id_prodi, selected_year):
 
     return JsonResponse(list_selected, safe=False)
 
+@csrf_exempt
+def get_sks_total(request):
+    data = json.loads(request.body)
+    
+    SKSL_sem_1 = data['sem1sksDPO']
+    SKSL_sem_2 = data['sem2sksDPO']
+    SKSL_sem_3 = data['sem3sksDPO']
+    SKSL_sem_4 = data['sem4sksDPO']
+    id_prodi = data['id']
+
+    sks = StatistikProdiPrediksi.objects.filter(id_sms = id_prodi).values("avg_skst_sem1", "avg_skst_sem2", "avg_skst_sem3", "avg_skst_sem4")
+
+
+    # Penjumlahan sks total
+    skst_sem1 = int(SKSL_sem_1)
+    skst_sem2 = int(SKSL_sem_1) + int(SKSL_sem_2)
+    skst_sem3 = int(SKSL_sem_1) + int(SKSL_sem_2) + int(SKSL_sem_3)
+    skst_sem4 = int(SKSL_sem_1) + int(SKSL_sem_2) + int(SKSL_sem_3) + int(SKSL_sem_4)
+
+    skor_data_array = [
+        {
+            "skst_sem1": skst_sem1,
+            "skst_sem2": skst_sem2,
+            "skst_sem3": skst_sem3,
+            "skst_sem4": skst_sem4,
+        }
+    ]
+    new_list = list(sks) + skor_data_array
+
+    print(new_list)
+    return JsonResponse(new_list, safe=False)
+
+@csrf_exempt
+def get_ipk_total(request):
+    data = json.loads(request.body)
+    IPK_sem_1 = data['sem1ipsKumulatif']
+    IPK_sem_2 = data['sem2ipsKumulatif']
+    IPK_sem_3 = data['sem3ipsKumulatif']
+    IPK_sem_4 = data['sem4ipsKumulatif']
+    id_prodi = data['id']
+
+    IPK_sem_1 = float(IPK_sem_1)
+    IPK_sem_2 = float(IPK_sem_2)
+    IPK_sem_3 = float(IPK_sem_3)
+    IPK_sem_4 = float(IPK_sem_4)
+
+    ipk = StatistikProdiPrediksi.objects.filter(id_sms = id_prodi).values("avg_ipk_sem1", "avg_ipk_sem2", "avg_ipk_sem3", "avg_ipk_sem4")
+    skor_data_array = [
+        {
+            "ipk_sem1": IPK_sem_1,
+            "ipk_sem2": IPK_sem_2,
+            "ipk_sem3": IPK_sem_3,
+            "ipk_sem4": IPK_sem_4,
+        }
+    ]
+    # new_list = []
+    new_list = list(ipk) + skor_data_array
+    print("db", new_list)
+    
+    return JsonResponse(new_list, safe=False)
+
+@csrf_exempt
+def get_sks_needed(request):
+    data = json.loads(request.body)
+    SKSL_sem_1 = data['sem1sksDPO']
+    SKSL_sem_2 = data['sem2sksDPO']
+    SKSL_sem_3 = data['sem3sksDPO']
+    SKSL_sem_4 = data['sem4sksDPO']
+
+    # Penjumlahan sks total
+    skst_sem4 = int(SKSL_sem_1) + int(SKSL_sem_2) + int(SKSL_sem_3) + int(SKSL_sem_4)
+    sks_needed = float((144-skst_sem4)/4)
+
+    skor_data_array = [
+        {
+            "sks_needed": sks_needed,
+        }
+    ]
+    return JsonResponse(skor_data_array, safe=False)
+
+def get_ketepatan_grad_time(request, id_prodi):
+    grad_time = StatistikProdiPrediksi.objects.filter(id_sms = id_prodi).values('avg_persentase_lulus_tepat_waktu')
+    print(list(grad_time))
+    return JsonResponse(list(grad_time), safe=False)
+
+@csrf_exempt
+def handle_table_bulk(request):
+    data = json.loads(request.body)
+    page_size = int(data['pageSize'])
+    current_page = int(data['pageNumber'])
+    data_list = list(data['data'])
+
+    start_index = (current_page - 1) * page_size
+    end_index = start_index + page_size
+    
+    if page_size == 0 :
+        paginated_data = data_list
+    else :
+        for idx, item in enumerate(data_list, start=1):
+            item['number'] = idx
+
+        paginated_data = data_list[start_index:end_index]
+    return JsonResponse(paginated_data, safe=False)
+    
