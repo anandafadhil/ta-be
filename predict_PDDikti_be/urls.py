@@ -2,6 +2,12 @@ from django.urls import path
 from .views import *
 
 urlpatterns = [
+    # Statistics
+    path('select-year', select_year, name='select_year'),
+    path('get-total-univ', get_total_univ, name='get_total_univ'),
+    path('get-total-prodi', get_total_prodi, name='get_total_prodi'),
+
+
     path('distinct-universities', get_univ_distinct, name='get_univ_distinct'),
     path('univ-name', get_univ_name, name='get_univ_name'),
     path('prodi/<str:id_univ>', get_prodi, name='get_prodi'),
@@ -42,4 +48,5 @@ urlpatterns = [
     
     # Predict Bulk
     path('handle-table-bulk', handle_table_bulk, name='handle_table_bulk'),
+
 ]

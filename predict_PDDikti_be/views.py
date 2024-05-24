@@ -1273,3 +1273,24 @@ def handle_table_bulk(request):
         paginated_data = data_list[start_index:end_index]
     return JsonResponse(paginated_data, safe=False)
     
+def select_year(request):
+    tahun = StatistikProdiVisualisasi.objects.values('tahun_angkatan').distinct().order_by('tahun_angkatan')
+    tahun_list = list(tahun)
+
+    for item in tahun_list:
+        item['tahun_angkatan'] = str(item['tahun_angkatan'])
+        item['value_tahun'] = str(item['tahun_angkatan'])
+
+    tahun_list.append({
+        "tahun_angkatan": "All Time",
+        "value_tahun": "All"
+    })
+    return JsonResponse(tahun_list, safe=False)
+
+def get_total_univ(request):
+    univ = DaftarUnivProdiVisualisasi.objects.values('id_univ').distinct()
+    return JsonResponse(list(univ), safe=False)
+
+def get_total_prodi(request):
+    prodi = DaftarUnivProdiVisualisasi.objects.values('id_prodi').distinct()
+    return JsonResponse(list(prodi), safe=False)
