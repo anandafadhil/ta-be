@@ -8,7 +8,7 @@ from django.db import connection
 from django.db.models import Sum, Avg, Value, FloatField, F, IntegerField, CharField, TextField, Case, When
 from django.db.models.functions import Cast
 from collections import defaultdict
-
+from . import services
 
 import pandas as pd
 from sklearn.ensemble import RandomForestClassifier, GradientBoostingClassifier, StackingClassifier
@@ -26,11 +26,7 @@ from sklearn.linear_model import LogisticRegression
 from django.conf import settings
 
 
-def get_univ_distinct(request):
-    univ_name_distinct = DaftarProdiPrediksi.objects.values_list('nama_univ', flat=True).distinct()
-    return JsonResponse({'distinct_universities': list(univ_name_distinct)})
-
-def get_univ_name(request):
+def get_univ_pred(request):
     distinct_universities = DaftarProdiPrediksi.objects.order_by("nama_univ").values_list('id_univ','nama_univ').distinct()
     return JsonResponse({'distinct_universities': list(distinct_universities)})
 
@@ -38,263 +34,85 @@ def get_prodi(request, id_univ):
     prodi = DaftarProdiPrediksi.objects.filter(id_univ = id_univ).order_by("nama_prodi").values_list("id_prodi", "nama_prodi")
     return JsonResponse({'prodi':list(prodi)})
 
+def get_univ_vis(request):
+    distinct_universities = DaftarUnivProdiVisualisasi.objects.order_by("nm_univ").values_list('id_univ','nm_univ').distinct()
+    return JsonResponse({'distinct_universities': list(distinct_universities)})
+
+def get_prodi_vis(request, id_univ):
+    prodi = DaftarUnivProdiVisualisasi.objects.filter(id_univ = id_univ).order_by("nm_prodi").values_list("id_prodi", "nm_prodi")
+    return JsonResponse({'prodi':list(prodi)})
+
 @csrf_exempt
-def save_uni_prodi(request):
-    deserialize = json.loads(request.body)
-    temp_save = SavedUniProdi(id_univ=deserialize['univInputID'], nama_univ=deserialize['univInput'], id_prodi=deserialize['prodiInputID'], nama_prodi=deserialize['prodiInput'])
-    temp_save.save()
-    return JsonResponse({'message': 'Complain created successfully'})
-
-def get_save_uni_prodi(request):
-    data = SavedUniProdi.objects.all().values_list('id_univ','nama_univ', 'id_prodi', 'nama_prodi').distinct()
-    # serialized_data = serializers.serialize('json', data)
-    return JsonResponse({'data': list(data)})
-
-def get_statistik_prodi(request=None, id_prodi=None):
-    statistik_prodi = StatistikProdiPrediksi.objects.filter(id_sms=id_prodi).values_list('avg_ipk_sem1', 'avg_ipk_sem2', 'avg_ipk_sem3', 'avg_ipk_sem4', 'avg_sks_sem1', 
-                                                                                         'avg_sks_sem2', 'avg_sks_sem3', 'avg_sks_sem4', 'avg_skst_sem1', 'avg_skst_sem2', 
-                                                                                         'avg_skst_sem3', 'avg_skst_sem4', 'avg_kenaikan_skst', 'avg_persentase_lulus_tepat_waktu')
-    return JsonResponse({'data': list(statistik_prodi)})
-
-def get_prediction(y_pred_stacking_loaded):
-
-    if y_pred_stacking_loaded == 1:
-        return JsonResponse({"prediction": True})
-    else:
-        return JsonResponse({"prediction": False})
-    
-@csrf_exempt
-def handle_data_sks(request):
+def handle_data_singular(request):
     data = json.loads(request.body)
-    
-    SKS_sem_1 = data['sem1sksSemester']
-    SKSL_sem_1 = data['sem1sksDPO']
-    IPK_sem_1 = data['sem1ipsKumulatif']
-
-    SKS_sem_2 = data['sem2sksSemester']
-    SKSL_sem_2 = data['sem2sksDPO']
-    IPK_sem_2 = data['sem2ipsKumulatif']
-
-    SKS_sem_3 = data['sem3sksSemester']
-    SKSL_sem_3 = data['sem3sksDPO']
-    IPK_sem_3 = data['sem3ipsKumulatif']
-
-    SKS_sem_4 = data['sem4sksSemester']
-    SKSL_sem_4 = data['sem4sksDPO']
-    IPK_sem_4 = data['sem4ipsKumulatif']
-
     id_prodi = data['id']
 
-    stat_prod = get_statistik_prodi(id_prodi=id_prodi)
+    # Call the get statistik services
+    stat_prod = services.get_statistik_prodi(id_prodi)
     stat_prod_data = stat_prod.content.decode()
-    # Assuming 'stat_prod_data' contains a 'data' key that has the stats dictionary
     stats_dict = json.loads(stat_prod_data)
     stats = stats_dict['data']
+
+    if not stat_prod_data:
+        return JsonResponse({"error": "No statistics found for the provided ID"}, status=404)
+
+    # Call the calculation & prediction services
     first_stat = stats[0]
-    # Get and decode average data from get_statistik_prodi
-    IPK_sem_1 = float(IPK_sem_1)
-    IPK_sem_2 = float(IPK_sem_2)
-    IPK_sem_3 = float(IPK_sem_3)
-    IPK_sem_4 = float(IPK_sem_4)
-    avg_ipk_sem1, avg_ipk_sem2, avg_ipk_sem3, avg_ipk_sem4 = first_stat[:4]
-    skor_ipk_sem1 = IPK_sem_1 / avg_ipk_sem1
-    skor_ipk_sem2 = IPK_sem_2 / avg_ipk_sem2
-    skor_ipk_sem3 = IPK_sem_3 / avg_ipk_sem3
-    skor_ipk_sem4 = IPK_sem_4 / avg_ipk_sem4
-    
-    SKS_sem_1 = float(SKS_sem_1)
-    SKS_sem_2 = float(SKS_sem_2)
-    SKS_sem_3 = float(SKS_sem_3)
-    SKS_sem_4 = float(SKS_sem_4)
-    avg_sks_sem1, avg_sks_sem2, avg_sks_sem3, avg_sks_sem4 = first_stat[4:8]
-    skor_sks_sem1 = SKS_sem_1 / avg_sks_sem1
-    skor_sks_sem2 = SKS_sem_2 / avg_sks_sem2
-    skor_sks_sem3 = SKS_sem_3 / avg_sks_sem3
-    skor_sks_sem4 = SKS_sem_4 / avg_sks_sem4
+    scores = services.calculate_scores(data, first_stat)
+    df = pd.DataFrame([scores])
+    y_pred_stacking_loaded = services.get_prediction(df)
 
-    # Declaring avg_skst pos
-    avg_skst_sem1, avg_skst_sem2, avg_skst_sem3, avg_skst_sem4, avg_kenaikan_skst = first_stat[8:13]
-
-    # Penjumlahan sks total
-    skst_sem1 = SKSL_sem_1
-    skst_sem2 = SKSL_sem_1 + SKSL_sem_2
-    skst_sem3 = SKSL_sem_1 + SKSL_sem_2 + SKSL_sem_3
-    skst_sem4 = SKSL_sem_1 + SKSL_sem_2 + SKSL_sem_3 + SKSL_sem_4
-
-    skst_sem1 = float(skst_sem1)
-    skst_sem2 = float(skst_sem2)
-    skst_sem3 = float(skst_sem3)
-    skst_sem4 = float(skst_sem4)
-    skor_skst_sem1 = skst_sem1 / avg_skst_sem1
-    skor_skst_sem2 = skst_sem2 / avg_skst_sem2
-    skor_skst_sem3 = skst_sem3 / avg_skst_sem3
-    skor_skst_sem4 = skst_sem4 / avg_skst_sem4
-
-    kenaikan_skst = (skst_sem1 + skst_sem2 + skst_sem3 + skst_sem4) / 4.0
-    skor_kenaikan_skst = float(kenaikan_skst) / avg_kenaikan_skst
-
-    avg_persentase_lulus_tepat_waktu = first_stat[13]
-    rata_rata_prodi = avg_persentase_lulus_tepat_waktu
-
-    skor_data_array = [
-        {
-            "skor_ipk_sem1": skor_ipk_sem1,
-            "skor_ipk_sem2": skor_ipk_sem2,
-            "skor_ipk_sem3": skor_ipk_sem3,
-            "skor_ipk_sem4": skor_ipk_sem4,
-            "skor_sks_sem1": skor_sks_sem1,
-            "skor_sks_sem2": skor_sks_sem2,
-            "skor_sks_sem3": skor_sks_sem3,
-            "skor_sks_sem4": skor_sks_sem4,
-            "skor_skst_sem1": skor_skst_sem1,
-            "skor_skst_sem2": skor_skst_sem2,
-            "skor_skst_sem3": skor_skst_sem3,
-            "skor_skst_sem4": skor_skst_sem4,
-            "skor_kenaikan_skst": skor_kenaikan_skst,
-            "rata_rata_prodi": rata_rata_prodi,
-        }
-    ]
-
-
-    df = pd.DataFrame(skor_data_array)
-    model_file_path = os.path.join(settings.BASE_DIR, 'predict_PDDikti_be', 'static', 'predict_PDDikti_be', 'model_files', 'stacking_clf_pipeline_compressed.pkl')
-    stacking_clf_loaded = joblib.load(model_file_path)
-    y_pred_stacking_loaded = stacking_clf_loaded.predict(df)
-
-    print("RES", y_pred_stacking_loaded)
     if y_pred_stacking_loaded == 1:
-        print('yes')
         return JsonResponse({"prediction": True})
     else:
-        print('ga')
         return JsonResponse({"prediction": False})
-    # return prediction_result
-    # return JsonResponse({"message": prediction_result})
 
 @csrf_exempt
-def handle_data_bulk(request, id_prodi):
+def handle_data_bulk(request):
     data = json.loads(request.body)
-    students_data = []
-    for student in data['data']:
-        student_data = {
-            'NPM': student['NPM'],
-            'IPK_sem_1': student['IPK_sem_1'],
-            'IPK_sem_2': student['IPK_sem_2'],
-            'IPK_sem_3': student['IPK_sem_3'],
-            'IPK_sem_4': student['IPK_sem_4'],
-            'SKS_sem_1': student['SKS_sem_1'],
-            'SKS_sem_2': student['SKS_sem_2'],
-            'SKS_sem_3': student['SKS_sem_3'],
-            'SKS_sem_4': student['SKS_sem_4'],
-            'SKSL_sem_1': student['SKSL_sem_1'],
-            'SKSL_sem_2': student['SKSL_sem_2'],
-            'SKSL_sem_3': student['SKSL_sem_3'],
-            'SKSL_sem_4': student['SKSL_sem_4'],
-        }
-        students_data.append(student_data)
+    print("dat", data['data'])
+    id_prodi = data['id']
 
-        """
-        PROCESSING DATA HERE
-        MODEL
-        """
+    # students_data = []
+    # for student in data['data']:
+    #     student_data = {
+    #         'NPM': student['NPM'],
+    #         'IPK_sem_1': student['IPK_sem_1'],
+    #         'IPK_sem_2': student['IPK_sem_2'],
+    #         'IPK_sem_3': student['IPK_sem_3'],
+    #         'IPK_sem_4': student['IPK_sem_4'],
+    #         'SKS_sem_1': student['SKS_sem_1'],
+    #         'SKS_sem_2': student['SKS_sem_2'],
+    #         'SKS_sem_3': student['SKS_sem_3'],
+    #         'SKS_sem_4': student['SKS_sem_4'],
+    #         'SKSL_sem_1': student['SKSL_sem_1'],
+    #         'SKSL_sem_2': student['SKSL_sem_2'],
+    #         'SKSL_sem_3': student['SKSL_sem_3'],
+    #         'SKSL_sem_4': student['SKSL_sem_4'],
+    #     }
+    #     students_data.append(student_data)
+    
+    # print("stud", students_data)
+
+    # Data Processing
     processed_data = []
-    for splitted_stud in students_data :
-        SKS_sem_1 = splitted_stud['SKS_sem_1']
-        SKSL_sem_1 = splitted_stud['SKSL_sem_1']
-        IPK_sem_1 = splitted_stud['IPK_sem_1']
-
-        SKS_sem_2 = splitted_stud['SKS_sem_2']
-        SKSL_sem_2 = splitted_stud['SKSL_sem_2']
-        IPK_sem_2 = splitted_stud['IPK_sem_2']
-
-        SKS_sem_3 = splitted_stud['SKS_sem_3']
-        SKSL_sem_3 = splitted_stud['SKSL_sem_3']
-        IPK_sem_3 = splitted_stud['IPK_sem_3']
-
-        SKS_sem_4 = splitted_stud['SKS_sem_4']
-        SKSL_sem_4 = splitted_stud['SKSL_sem_4']
-        IPK_sem_4 = splitted_stud['IPK_sem_4']
-
+    for splitted_stud in data['data'] :
         NPM = splitted_stud['NPM']
 
-
-        # handling prodi data
-        stat_prod = get_statistik_prodi(id_prodi=id_prodi)
+        stat_prod = services.get_statistik_prodi(id_prodi)
         stat_prod_data = stat_prod.content.decode()
-        # Assuming 'stat_prod_data' contains a 'data' key that has the stats dictionary
         stats_dict = json.loads(stat_prod_data)
         stats = stats_dict['data']
+
+        if not stat_prod_data:
+            return JsonResponse({"error": "No statistics found for the provided ID"}, status=404)
+        
+        
+        # Call the calculation & prediction services
         first_stat = stats[0]
-        
-        
-        IPK_sem_1 = float(IPK_sem_1)
-        IPK_sem_2 = float(IPK_sem_2)
-        IPK_sem_3 = float(IPK_sem_3)
-        IPK_sem_4 = float(IPK_sem_4)
-        avg_ipk_sem1, avg_ipk_sem2, avg_ipk_sem3, avg_ipk_sem4 = first_stat[:4]
-        skor_ipk_sem1 = IPK_sem_1 / avg_ipk_sem1
-        skor_ipk_sem2 = IPK_sem_2 / avg_ipk_sem2
-        skor_ipk_sem3 = IPK_sem_3 / avg_ipk_sem3
-        skor_ipk_sem4 = IPK_sem_4 / avg_ipk_sem4
-        
-        SKS_sem_1 = float(SKS_sem_1)
-        SKS_sem_2 = float(SKS_sem_2)
-        SKS_sem_3 = float(SKS_sem_3)
-        SKS_sem_4 = float(SKS_sem_4)
-        avg_sks_sem1, avg_sks_sem2, avg_sks_sem3, avg_sks_sem4 = first_stat[4:8]
-        skor_sks_sem1 = SKS_sem_1 / avg_sks_sem1
-        skor_sks_sem2 = SKS_sem_2 / avg_sks_sem2
-        skor_sks_sem3 = SKS_sem_3 / avg_sks_sem3
-        skor_sks_sem4 = SKS_sem_4 / avg_sks_sem4
-
-        # Declaring avg_skst pos
-        avg_skst_sem1, avg_skst_sem2, avg_skst_sem3, avg_skst_sem4, avg_kenaikan_skst = first_stat[8:13]
-
-        # Penjumlahan sks total
-        skst_sem1 = SKSL_sem_1
-        skst_sem2 = SKSL_sem_1 + SKSL_sem_2
-        skst_sem3 = SKSL_sem_1 + SKSL_sem_2 + SKSL_sem_3
-        skst_sem4 = SKSL_sem_1 + SKSL_sem_2 + SKSL_sem_3 + SKSL_sem_4
-
-        skst_sem1 = float(skst_sem1)
-        skst_sem2 = float(skst_sem2)
-        skst_sem3 = float(skst_sem3)
-        skst_sem4 = float(skst_sem4)
-        skor_skst_sem1 = skst_sem1 / avg_skst_sem1
-        skor_skst_sem2 = skst_sem2 / avg_skst_sem2
-        skor_skst_sem3 = skst_sem3 / avg_skst_sem3
-        skor_skst_sem4 = skst_sem4 / avg_skst_sem4
-
-        kenaikan_skst = (skst_sem1 + skst_sem2 + skst_sem3 + skst_sem4) / 4.0
-        skor_kenaikan_skst = float(kenaikan_skst) / avg_kenaikan_skst
-
-        avg_persentase_lulus_tepat_waktu = first_stat[13]
-        rata_rata_prodi = avg_persentase_lulus_tepat_waktu
-
-        skor_data_array = [
-            {
-                "skor_ipk_sem1": skor_ipk_sem1,
-                "skor_ipk_sem2": skor_ipk_sem2,
-                "skor_ipk_sem3": skor_ipk_sem3,
-                "skor_ipk_sem4": skor_ipk_sem4,
-                "skor_sks_sem1": skor_sks_sem1,
-                "skor_sks_sem2": skor_sks_sem2,
-                "skor_sks_sem3": skor_sks_sem3,
-                "skor_sks_sem4": skor_sks_sem4,
-                "skor_skst_sem1": skor_skst_sem1,
-                "skor_skst_sem2": skor_skst_sem2,
-                "skor_skst_sem3": skor_skst_sem3,
-                "skor_skst_sem4": skor_skst_sem4,
-                "skor_kenaikan_skst": skor_kenaikan_skst,
-                "rata_rata_prodi": rata_rata_prodi,
-            }
-        ]
-
-
-        df = pd.DataFrame(skor_data_array)
-        model_file_path = os.path.join(settings.BASE_DIR, 'predict_PDDikti_be', 'static', 'predict_PDDikti_be', 'model_files', 'stacking_clf_pipeline_compressed.pkl')
-        stacking_clf_loaded = joblib.load(model_file_path)
-        y_pred_stacking_loaded = stacking_clf_loaded.predict(df)
+        scores = services.calculate_scores(splitted_stud, first_stat)
+        df = pd.DataFrame([scores])
+        y_pred_stacking_loaded = services.get_prediction(df)
 
         if y_pred_stacking_loaded == 1:
             result = "Tepat Waktu"
@@ -344,20 +162,6 @@ def get_statistik_lulus_tahun(request):
         print(row)
     
 def get_avg_grad_time_univ_all(request=None):
-    by_year = StatistikProdiVisualisasi.objects.values('tahun_angkatan').annotate(
-    avg_grad_time=Cast(
-        (Sum(F('jml_mhs_lulus35') * 3.5) + 
-            Sum(F('jml_mhs_lulus40') * 4.0) + 
-            Sum(F('jml_mhs_lulus45') * 4.5) + 
-            Sum(F('jml_mhs_lulus50') * 5.0) + 
-            Sum(F('jml_mhs_lulus55') * 5.5) + 
-            Sum(F('jml_mhs_lulus60') * 6.0)) / 
-        Sum(F('jml_mhs_lulus35') + F('jml_mhs_lulus40') + F('jml_mhs_lulus45') + 
-            F('jml_mhs_lulus50') + F('jml_mhs_lulus55') + F('jml_mhs_lulus60')),
-        output_field=FloatField()
-        )
-    ).order_by('tahun_angkatan')
-
     # Calculate overall average
     all_time = StatistikProdiVisualisasi.objects.aggregate(
         avg_grad_time=Cast(
@@ -374,7 +178,7 @@ def get_avg_grad_time_univ_all(request=None):
     )
 
     # Merge results
-    results = list(by_year) + [{'tahun_angkatan': 'All Time', **all_time}]
+    results = [{'tahun_angkatan': 'All Time', **all_time}]
     list_selected = []
     for avg_lulus in list(results) :
         year = str(avg_lulus['tahun_angkatan'])
@@ -408,13 +212,11 @@ def get_ketepatan_grad_time_univ_all(request=None):
         avg_grad = avg_lulus['avg_grad_time']
         rounded_tepat_grad = round(avg_grad, 4)*100
         rounded_tidak_tepat_grad = 100 - rounded_tepat_grad
-        print(type(year), rounded_tepat_grad) 
         if year == "All Time" : 
             list_selected.append({"selected_year": year, "tepat_grad":rounded_tepat_grad, "tidak_tepat_grad": rounded_tidak_tepat_grad})
             break
         else :
             continue
-    print(list_selected)
     return JsonResponse(list_selected, safe=False)
 
 def get_prog_grad_time_univ_all(request=None):
@@ -427,18 +229,9 @@ def get_prog_grad_time_univ_all(request=None):
         )
     ).order_by('tahun_angkatan')
 
-    # Calculate overall average
-    all_time = StatistikProdiVisualisasi.objects.aggregate(
-        avg_grad_time=Cast(
-            (Sum(F('jml_mhs_lulus35')) + Sum(F('jml_mhs_lulus40'))) * 1.0 / 
-            Sum(F('jml_mhs_lulus35') + F('jml_mhs_lulus40') + F('jml_mhs_lulus45') + 
-                F('jml_mhs_lulus50') + F('jml_mhs_lulus55') + F('jml_mhs_lulus60')),
-            output_field=FloatField()
-        )
-    )
 
     # Merge results
-    results = list(by_year) + [{'tahun_angkatan': 'All Time', **all_time}]
+    results = list(by_year)
     list_selected = []
     for avg_lulus in list(results) :
         year = str(avg_lulus['tahun_angkatan'])
@@ -620,9 +413,24 @@ def get_geochart(request, selected_year_fe):
     return JsonResponse(result_all, safe=False)
 
 def get_univ_info(request, id_univ):
-    univ_info = DaftarUnivProdiVisualisasi.objects.filter(id_univ = id_univ).values('nm_univ', 'tahun_berdiri_univ', 'rank_univ').first()
-    print(univ_info)
-    return JsonResponse(univ_info, safe=False)
+    univ_info = DaftarUnivProdiVisualisasi.objects.filter(id_univ = id_univ).values('id_univ', 'nm_univ', 'tahun_berdiri_univ', 'rank_univ').first()
+    wilayah_data = WilayahUniv.objects.values('id_sp', 'provinsi', 'provinsi_label')
+    wilayah_dict = {wu['id_sp']: wu for wu in wilayah_data}
+    res = []
+    wu = wilayah_dict.get(univ_info['id_univ'])
+    if wu and wu['provinsi'] is not None:
+        provinsi = wu['provinsi']
+        provinsi_label = wu['provinsi_label']
+
+        res.append({
+            'id_univ': univ_info['id_univ'],
+            'nm_univ': univ_info['nm_univ'],
+            'thn': univ_info['tahun_berdiri_univ'],
+            'rank_univ': univ_info['rank_univ'],
+            'provinsi': provinsi,
+            'provinsi_label': provinsi_label,
+        })
+    return JsonResponse(res, safe=False)
 
 def get_avg_grad_time_univ_filter(request, id_univ):
     statistik_data = StatistikProdiVisualisasi.objects.select_related('id_sms').values(
@@ -638,7 +446,6 @@ def get_avg_grad_time_univ_filter(request, id_univ):
         nm_univ = None
         total_lulus_atas = spv['jml_mhs_lulus35']*3.5 + spv['jml_mhs_lulus40'] *4.0 + spv['jml_mhs_lulus45']*4.5 + spv['jml_mhs_lulus50'] *5.0 + spv['jml_mhs_lulus55']*5.5 + spv['jml_mhs_lulus60'] *6.0
         total_lulus = spv['jml_mhs_lulus35'] + spv['jml_mhs_lulus40'] + spv['jml_mhs_lulus45'] + spv['jml_mhs_lulus50'] + spv['jml_mhs_lulus55'] + spv['jml_mhs_lulus60']
-        persentase = float(total_lulus_atas / total_lulus) if total_lulus > 0 else 0
 
         # left join dupv
         dupv = univ_prodi_dict.get(spv['id_sms'])
@@ -877,15 +684,12 @@ def get_dist_grad_univ_filter(request, selected_id_univ, selected_year_fe) :
         return JsonResponse(result_year, safe=False)
 
 def get_ketepatan_grad_time_univ_filter(request, selected_id_univ):
-    # selected_id_univ = '0D1E63E9-CBFB-4546-A242-875C310083A5'
     statistik_data = StatistikProdiVisualisasi.objects.select_related('id_sms').values(
         'uuid', 'id_sms', 'tahun_angkatan', 'jml_mhs_lulus35', 'jml_mhs_lulus40', 'jml_mhs_lulus45', 'jml_mhs_lulus50', 'jml_mhs_lulus55', 'jml_mhs_lulus60'
     )
     univ_prodi_data = DaftarUnivProdiVisualisasi.objects.values('id_prodi', 'id_univ', 'nm_univ', 'nm_prodi')
     univ_prodi_dict = {up['id_prodi']: up for up in univ_prodi_data}
-    print('all', statistik_data)
     res=[]
-    res_all=[]
     for spv in statistik_data :
         dupv = univ_prodi_dict.get(spv['id_sms'])
         if dupv:
@@ -912,14 +716,6 @@ def get_ketepatan_grad_time_univ_filter(request, selected_id_univ):
                     'jml_mhs_lulus60': spv['jml_mhs_lulus60']
                 })
 
-    # grouped_data = defaultdict(lambda: {
-    #     'jml_mhs_lulus35': 0,
-    #     'jml_mhs_lulus40': 0,
-    #     'jml_mhs_lulus45': 0,
-    #     'jml_mhs_lulus50': 0,
-    #     'jml_mhs_lulus55': 0,
-    #     'jml_mhs_lulus60': 0
-    # })
 
     total_aggregate = {
         'jml_mhs_lulus35': 0,
@@ -931,14 +727,9 @@ def get_ketepatan_grad_time_univ_filter(request, selected_id_univ):
         'total_lulus_atas': 0,
         'total_lulus': 0
         }
+    
+    result_all=[]
     for entry in res:
-        key = (entry['thn'])
-        # grouped_data[key]['jml_mhs_lulus35'] += entry['jml_mhs_lulus35']
-        # grouped_data[key]['jml_mhs_lulus40'] += entry['jml_mhs_lulus40']
-        # grouped_data[key]['jml_mhs_lulus45'] += entry['jml_mhs_lulus45']
-        # grouped_data[key]['jml_mhs_lulus50'] += entry['jml_mhs_lulus50']
-        # grouped_data[key]['jml_mhs_lulus55'] += entry['jml_mhs_lulus55']
-        # grouped_data[key]['jml_mhs_lulus60'] += entry['jml_mhs_lulus60']
         total_aggregate['jml_mhs_lulus35'] += entry['jml_mhs_lulus35']
         total_aggregate['jml_mhs_lulus40'] += entry['jml_mhs_lulus40']
         total_aggregate['jml_mhs_lulus45'] += entry['jml_mhs_lulus45']
@@ -947,32 +738,20 @@ def get_ketepatan_grad_time_univ_filter(request, selected_id_univ):
         total_aggregate['jml_mhs_lulus60'] += entry['jml_mhs_lulus60']
         total_aggregate['total_lulus_atas'] += entry['total_lulus_atas']
         total_aggregate['total_lulus'] += entry['total_lulus']
-    
-    # for key, counts in grouped_data.items():
-    #     tahun_angkatan = key
-    #     total_lulus_atas = (counts['jml_mhs_lulus35'] + counts['jml_mhs_lulus40'] )*1.0
-    #     total_lulus = counts['jml_mhs_lulus35'] + counts['jml_mhs_lulus40'] + counts['jml_mhs_lulus45'] + counts['jml_mhs_lulus50'] + counts['jml_mhs_lulus55'] + counts['jml_mhs_lulus60']
-    #     persentase = float(total_lulus_atas / total_lulus) if total_lulus > 0 else 0
-    #     res_all.append({
-    #         'tahun_angkatan':tahun_angkatan,
-    #         'persentase':persentase,
-    #     })
 
     total_aggregate['persentase'] = float(total_aggregate['total_lulus_atas'] / total_aggregate['total_lulus']) if total_aggregate['total_lulus'] > 0 else 0
-    res_all.append({
+    result_all.append({
         'tahun_angkatan': "All Time",
         'persentase': total_aggregate['persentase'],
     })
-    return JsonResponse(res_all, safe=False)
+    return JsonResponse(result_all, safe=False)
 
 def get_prog_grad_time_univ_filter(request, selected_id_univ):
-    # selected_id_univ = '0D1E63E9-CBFB-4546-A242-875C310083A5'
     statistik_data = StatistikProdiVisualisasi.objects.select_related('id_sms').values(
         'uuid', 'id_sms', 'tahun_angkatan', 'jml_mhs_lulus35', 'jml_mhs_lulus40', 'jml_mhs_lulus45', 'jml_mhs_lulus50', 'jml_mhs_lulus55', 'jml_mhs_lulus60'
     )
     univ_prodi_data = DaftarUnivProdiVisualisasi.objects.values('id_prodi', 'id_univ', 'nm_univ', 'nm_prodi')
     univ_prodi_dict = {up['id_prodi']: up for up in univ_prodi_data}
-    print('all', statistik_data)
     res=[]
     res_all=[]
     for spv in statistik_data :
@@ -1033,17 +812,16 @@ def get_prog_grad_time_univ_filter(request, selected_id_univ):
     return JsonResponse(res_all, safe=False)
 
 def get_prodi_info(request, id_prodi):
-    prodi_info = DaftarUnivProdiVisualisasi.objects.filter(id_prodi = id_prodi).values('nm_prodi', 'tahun_berdiri_prodi', 'rank_prodi').first()
+    prodi_info = DaftarUnivProdiVisualisasi.objects.filter(id_prodi = id_prodi).values('nm_univ', 'nm_prodi', 'tahun_berdiri_prodi', 'rank_prodi').first()
     return JsonResponse(prodi_info, safe=False)
 
 def get_avg_ipk(request, id_prodi):
-    by_year = StatistikProdiVisualisasi.objects.filter(id_sms = id_prodi).values('tahun_angkatan', 'avg_ipk_overall', 'avg_ipk_tepat_waktu', 'avg_ipk_telat')
     all_time = StatistikProdiVisualisasi.objects.filter(id_sms=id_prodi).aggregate(
-        avg_ipk_overall=Avg('avg_ipk_overall'),
-        avg_ipk_tepat_waktu=Avg('avg_ipk_tepat_waktu'),
-        avg_ipk_telat=Avg('avg_ipk_telat')
+    avg_ipk_overall=Avg(Case(When(avg_ipk_overall__gt=0, then=F('avg_ipk_overall')), default=None)),
+    avg_ipk_tepat_waktu=Avg(Case(When(avg_ipk_tepat_waktu__gt=0, then=F('avg_ipk_tepat_waktu')), default=None)),
+    avg_ipk_telat=Avg(Case(When(avg_ipk_telat__gt=0, then=F('avg_ipk_telat')), default=None))
     ) 
-    results = list(by_year) + [{'tahun_angkatan': 'All Time', **all_time}]
+    results = [{'tahun_angkatan': 'All Time', **all_time}]
 
     return JsonResponse(results, safe=False)
 
@@ -1061,13 +839,8 @@ def get_avg_sks(request, id_prodi):
         avg_sks_sem8=Avg(Case(When(avg_sks_sem8__gt=0, then=F('avg_sks_sem8')), default=None))
     )
 
-    all_time['tahun'] = 'All Time'
     result = [all_time]
 
-    for item in result:
-        for key, value in item.items():
-            if value is None:
-                item[key] = 0
 
     return JsonResponse(result, safe=False)
 
@@ -1099,7 +872,6 @@ def get_ketepatan_grad_time_prodi_filter(request, id_prodi):
         )
     )
 
-    print(all_time)
     return JsonResponse(all_time, safe=False)
 
 def get_prog_grad_time_prodi_filter(request, id_prodi):
@@ -1137,7 +909,6 @@ def get_dist_grad_prodi_filter(request, id_prodi, selected_year):
         jml_mhs_lulus55=Sum('jml_mhs_lulus55'),
         jml_mhs_lulus60=Sum('jml_mhs_lulus60')
     )
-    print(total_stats)
 
     # Convert sums to int and add 'All Time' label
     all_time_stats = {
@@ -1170,13 +941,41 @@ def get_dist_grad_prodi_filter(request, id_prodi, selected_year):
     return JsonResponse(list_selected, safe=False)
 
 @csrf_exempt
+def get_ipk_total(request):
+    data = json.loads(request.body)
+    IPK_sem_1 = data['IPK_sem_1']
+    IPK_sem_2 = data['IPK_sem_2']
+    IPK_sem_3 = data['IPK_sem_3']
+    IPK_sem_4 = data['IPK_sem_4']
+    id_prodi = data['id']
+
+    IPK_sem_1 = float(IPK_sem_1)
+    IPK_sem_2 = float(IPK_sem_2)
+    IPK_sem_3 = float(IPK_sem_3)
+    IPK_sem_4 = float(IPK_sem_4)
+
+    ipk = StatistikProdiPrediksi.objects.filter(id_sms = id_prodi).values("avg_ipk_sem1", "avg_ipk_sem2", "avg_ipk_sem3", "avg_ipk_sem4")
+    skor_data_array = [
+        {
+            "ipk_sem1": IPK_sem_1,
+            "ipk_sem2": IPK_sem_2,
+            "ipk_sem3": IPK_sem_3,
+            "ipk_sem4": IPK_sem_4,
+        }
+    ]
+    new_list = list(ipk) + skor_data_array
+    
+    return JsonResponse(new_list, safe=False)
+
+
+@csrf_exempt
 def get_sks_total(request):
     data = json.loads(request.body)
     
-    SKSL_sem_1 = data['sem1sksDPO']
-    SKSL_sem_2 = data['sem2sksDPO']
-    SKSL_sem_3 = data['sem3sksDPO']
-    SKSL_sem_4 = data['sem4sksDPO']
+    SKSL_sem_1 = data['SKSL_sem_1']
+    SKSL_sem_2 = data['SKSL_sem_2']
+    SKSL_sem_3 = data['SKSL_sem_3']
+    SKSL_sem_4 = data['SKSL_sem_4']
     id_prodi = data['id']
 
     sks = StatistikProdiPrediksi.objects.filter(id_sms = id_prodi).values("avg_skst_sem1", "avg_skst_sem2", "avg_skst_sem3", "avg_skst_sem4")
@@ -1202,41 +1001,12 @@ def get_sks_total(request):
     return JsonResponse(new_list, safe=False)
 
 @csrf_exempt
-def get_ipk_total(request):
-    data = json.loads(request.body)
-    IPK_sem_1 = data['sem1ipsKumulatif']
-    IPK_sem_2 = data['sem2ipsKumulatif']
-    IPK_sem_3 = data['sem3ipsKumulatif']
-    IPK_sem_4 = data['sem4ipsKumulatif']
-    id_prodi = data['id']
-
-    IPK_sem_1 = float(IPK_sem_1)
-    IPK_sem_2 = float(IPK_sem_2)
-    IPK_sem_3 = float(IPK_sem_3)
-    IPK_sem_4 = float(IPK_sem_4)
-
-    ipk = StatistikProdiPrediksi.objects.filter(id_sms = id_prodi).values("avg_ipk_sem1", "avg_ipk_sem2", "avg_ipk_sem3", "avg_ipk_sem4")
-    skor_data_array = [
-        {
-            "ipk_sem1": IPK_sem_1,
-            "ipk_sem2": IPK_sem_2,
-            "ipk_sem3": IPK_sem_3,
-            "ipk_sem4": IPK_sem_4,
-        }
-    ]
-    # new_list = []
-    new_list = list(ipk) + skor_data_array
-    print("db", new_list)
-    
-    return JsonResponse(new_list, safe=False)
-
-@csrf_exempt
 def get_sks_needed(request):
     data = json.loads(request.body)
-    SKSL_sem_1 = data['sem1sksDPO']
-    SKSL_sem_2 = data['sem2sksDPO']
-    SKSL_sem_3 = data['sem3sksDPO']
-    SKSL_sem_4 = data['sem4sksDPO']
+    SKSL_sem_1 = data['SKSL_sem_1']
+    SKSL_sem_2 = data['SKSL_sem_2']
+    SKSL_sem_3 = data['SKSL_sem_3']
+    SKSL_sem_4 = data['SKSL_sem_4']
 
     # Penjumlahan sks total
     skst_sem4 = int(SKSL_sem_1) + int(SKSL_sem_2) + int(SKSL_sem_3) + int(SKSL_sem_4)
@@ -1288,9 +1058,9 @@ def select_year(request):
     return JsonResponse(tahun_list, safe=False)
 
 def get_total_univ(request):
-    univ = DaftarUnivProdiVisualisasi.objects.values('id_univ').distinct()
-    return JsonResponse(list(univ), safe=False)
+    univ = DaftarUnivProdiVisualisasi.objects.values('id_univ').distinct().count()
+    return JsonResponse(univ, safe=False)
 
 def get_total_prodi(request):
-    prodi = DaftarUnivProdiVisualisasi.objects.values('id_prodi').distinct()
-    return JsonResponse(list(prodi), safe=False)
+    prodi = DaftarUnivProdiVisualisasi.objects.values('id_prodi').distinct().count()
+    return JsonResponse(prodi, safe=False)
