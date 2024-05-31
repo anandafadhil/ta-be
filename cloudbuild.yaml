@@ -1,0 +1,13 @@
+steps:
+# Build the container image
+- name: 'gcr.io/cloud-builders/docker'
+  args: ['build', '-t', 'gcr.io/pddikti-425011/pddikti-be', '.']
+# Push the container image to Container Registry
+- name: 'gcr.io/cloud-builders/docker'
+  args: ['push', 'gcr.io/pddikti-425011/pddikti-be']
+# Deploy container image to Cloud Run
+- name: 'gcr.io/google.com/cloudsdktool/cloud-sdk'
+  entrypoint: gcloud
+  args: ['run', 'deploy', 'pddikti-be', '--image', 'gcr.io/pddikti-425011/pddikti-be', '--region', 'us-central1', '--platform', 'managed', '--port', '8000']
+images:
+- gcr.io/pddikti-425011/pddikti-be
