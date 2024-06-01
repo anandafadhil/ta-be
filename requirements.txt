@@ -25,6 +25,7 @@ psycopg2-binary==2.9.9
 pygtrie==2.5.0
 pyparsing==3.1.2
 python-dateutil==2.9.0.post0
+python-decouple==3.8
 pytz==2024.1
 scikit-learn==1.2.2
 scipy==1.13.0
