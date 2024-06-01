@@ -17,7 +17,7 @@ from decouple import config, Csv
 BASE_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 
 STATICFILES_DIRS = [
-    os.path.join(BASE_DIR, config('STATICFILES_DIRS'))
+    os.path.join(BASE_DIR, 'predict_PDDikti_be', 'static'),
 ]
 
 # Quick-start development settings - unsuitable for production
