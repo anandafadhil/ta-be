@@ -247,8 +247,8 @@ def get_prog_grad_time_univ_all(request=None):
     print(list_selected)
     return JsonResponse(list_selected, safe=False)
 
-def get_dist_grad_univ_all(request, selected_year_fe) :
-    selected_year = selected_year_fe
+def get_dist_grad_univ_all(request, year) :
+    selected_year = year
     annual_stats = StatistikProdiVisualisasi.objects.values('tahun_angkatan').annotate(
     tahun=Cast('tahun_angkatan', output_field=CharField()),
     jml_mhs_lulus35=Cast(Sum('jml_mhs_lulus35'), output_field=IntegerField()),
@@ -283,7 +283,7 @@ def get_dist_grad_univ_all(request, selected_year_fe) :
 
     list_selected = []
     for res in list(combined_results) :
-        year = res['tahun']
+        tahun = res['tahun']
         jml_mhs_lulus35 = res['jml_mhs_lulus35']
         jml_mhs_lulus40 = res['jml_mhs_lulus40']
         jml_mhs_lulus45 = res['jml_mhs_lulus45']
@@ -292,10 +292,10 @@ def get_dist_grad_univ_all(request, selected_year_fe) :
         jml_mhs_lulus60 = res['jml_mhs_lulus60']
         # rounded_avg_grad = round(avg_grad, 1)
         # print(type(year), rounded_avg_grad) 
-        if year == selected_year : 
-            list_selected.append({"selected_year": year, "jml_mhs_lulus35":jml_mhs_lulus35, "jml_mhs_lulus40":jml_mhs_lulus40, "jml_mhs_lulus45":jml_mhs_lulus45, "jml_mhs_lulus50":jml_mhs_lulus50, "jml_mhs_lulus55":jml_mhs_lulus55, "jml_mhs_lulus60":jml_mhs_lulus60})
+        if tahun == selected_year : 
+            list_selected.append({"selected_year": tahun, "jml_mhs_lulus35":jml_mhs_lulus35, "jml_mhs_lulus40":jml_mhs_lulus40, "jml_mhs_lulus45":jml_mhs_lulus45, "jml_mhs_lulus50":jml_mhs_lulus50, "jml_mhs_lulus55":jml_mhs_lulus55, "jml_mhs_lulus60":jml_mhs_lulus60})
             break
-        elif year == "All Time" :
+        elif tahun == "All Time" :
             list_selected.append({"selected_year": "All Time", "jml_mhs_lulus35":jml_mhs_lulus35, "jml_mhs_lulus40":jml_mhs_lulus40, "jml_mhs_lulus45":jml_mhs_lulus45, "jml_mhs_lulus50":jml_mhs_lulus50, "jml_mhs_lulus55":jml_mhs_lulus55, "jml_mhs_lulus60":jml_mhs_lulus60})
             break
         else :
@@ -304,8 +304,8 @@ def get_dist_grad_univ_all(request, selected_year_fe) :
 
     return JsonResponse(list_selected, safe=False)
 
-def get_geochart(request, selected_year_fe):
-    selected_year = selected_year_fe
+def get_geochart(request, year):
+    selected_year = year
 
     # Fetching data with related objects
     statistik_data = StatistikProdiVisualisasi.objects.select_related('id_sms').values(
@@ -502,7 +502,8 @@ def get_avg_grad_time_univ_filter(request, id_univ):
 
     return JsonResponse(result_all, safe=False)
 
-def get_prodi_ranking(request, selected_id_univ):
+def get_prodi_ranking(request, id_univ):
+    selected_id = id_univ
     statistik_data = StatistikProdiVisualisasi.objects.select_related('id_sms').values(
         'uuid', 'id_sms', 'tahun_angkatan', 'jml_mhs_lulus35', 'jml_mhs_lulus40', 'jml_mhs_lulus45', 'jml_mhs_lulus50', 'jml_mhs_lulus55', 'jml_mhs_lulus60'
     )
@@ -525,7 +526,7 @@ def get_prodi_ranking(request, selected_id_univ):
             id_univ = dupv['id_univ']
             nm_prodi = dupv['nm_prodi']
             id_prodi = dupv['id_prodi']
-            if id_univ == selected_id_univ: 
+            if id_univ == selected_id: 
                 res.append({
                     'uuid': spv['uuid'],
                     'per': persentase,
@@ -581,7 +582,9 @@ def get_prodi_ranking(request, selected_id_univ):
 
     return JsonResponse(result_all_sorted, safe=False)
 
-def get_dist_grad_univ_filter(request, selected_id_univ, selected_year_fe) :
+def get_dist_grad_univ_filter(request, id_univ, year) :
+    selected_id = id_univ
+    selected_year = year
     annual_stats = StatistikProdiVisualisasi.objects.values('tahun_angkatan').annotate(
     tahun=Cast('tahun_angkatan', output_field=CharField()),
     id_sms=Cast('id_sms', output_field=TextField()),
@@ -604,7 +607,7 @@ def get_dist_grad_univ_filter(request, selected_id_univ, selected_year_fe) :
             id_univ = dupv['id_univ']
             nm_prodi = dupv['nm_prodi']
             id_prodi = dupv['id_prodi']
-            if id_univ == selected_id_univ: 
+            if id_univ == selected_id: 
                 res.append({
                     'thn': spv['tahun_angkatan'],
                     'id_sms': spv['id_sms'],
@@ -654,7 +657,7 @@ def get_dist_grad_univ_filter(request, selected_id_univ, selected_year_fe) :
         total55 += counts['jml_mhs_lulus55']
         total60 += counts['jml_mhs_lulus60']
 
-        if selected_year_fe!= 'All' and tahun_angkatan == int(selected_year_fe):
+        if selected_year!= 'All' and tahun_angkatan == int(selected_year):
             result_year.append({
                 'tahun_angkatan': tahun_angkatan,
                 'jml_mhs_lulus_35': counts['jml_mhs_lulus35'],
@@ -678,12 +681,13 @@ def get_dist_grad_univ_filter(request, selected_id_univ, selected_year_fe) :
         'jml_mhs_lulus_60':total60,
     })
 
-    if selected_year_fe == 'All' :
+    if selected_year == 'All' :
         return JsonResponse(result_all, safe=False)
     else :
         return JsonResponse(result_year, safe=False)
 
-def get_ketepatan_grad_time_univ_filter(request, selected_id_univ):
+def get_ketepatan_grad_time_univ_filter(request, id_univ):
+    selected_id = id_univ
     statistik_data = StatistikProdiVisualisasi.objects.select_related('id_sms').values(
         'uuid', 'id_sms', 'tahun_angkatan', 'jml_mhs_lulus35', 'jml_mhs_lulus40', 'jml_mhs_lulus45', 'jml_mhs_lulus50', 'jml_mhs_lulus55', 'jml_mhs_lulus60'
     )
@@ -699,7 +703,7 @@ def get_ketepatan_grad_time_univ_filter(request, selected_id_univ):
             id_prodi = dupv['id_prodi']
             total_lulus_atas = (spv['jml_mhs_lulus35'] + spv['jml_mhs_lulus40'] )*1.0
             total_lulus = spv['jml_mhs_lulus35'] + spv['jml_mhs_lulus40'] + spv['jml_mhs_lulus45'] + spv['jml_mhs_lulus50'] + spv['jml_mhs_lulus55'] + spv['jml_mhs_lulus60']
-            if id_univ == selected_id_univ: 
+            if id_univ == selected_id: 
                 res.append({
                     'thn': spv['tahun_angkatan'],
                     'id_sms': spv['id_sms'],
@@ -746,7 +750,8 @@ def get_ketepatan_grad_time_univ_filter(request, selected_id_univ):
     })
     return JsonResponse(result_all, safe=False)
 
-def get_prog_grad_time_univ_filter(request, selected_id_univ):
+def get_prog_grad_time_univ_filter(request, id_univ):
+    selected_id = id_univ
     statistik_data = StatistikProdiVisualisasi.objects.select_related('id_sms').values(
         'uuid', 'id_sms', 'tahun_angkatan', 'jml_mhs_lulus35', 'jml_mhs_lulus40', 'jml_mhs_lulus45', 'jml_mhs_lulus50', 'jml_mhs_lulus55', 'jml_mhs_lulus60'
     )
@@ -763,7 +768,7 @@ def get_prog_grad_time_univ_filter(request, selected_id_univ):
             id_prodi = dupv['id_prodi']
             total_lulus_atas = (spv['jml_mhs_lulus35'] + spv['jml_mhs_lulus40'] )*1.0
             total_lulus = spv['jml_mhs_lulus35'] + spv['jml_mhs_lulus40'] + spv['jml_mhs_lulus45'] + spv['jml_mhs_lulus50'] + spv['jml_mhs_lulus55'] + spv['jml_mhs_lulus60']
-            if id_univ == selected_id_univ: 
+            if id_univ == selected_id: 
                 res.append({
                     'thn': spv['tahun_angkatan'],
                     'id_sms': spv['id_sms'],
@@ -886,7 +891,8 @@ def get_prog_grad_time_prodi_filter(request, id_prodi):
 
     return JsonResponse(list(by_year), safe=False)
 
-def get_dist_grad_prodi_filter(request, id_prodi, selected_year):
+def get_dist_grad_prodi_filter(request, id_prodi, year):
+    selected_year = year
     annual_stats = StatistikProdiVisualisasi.objects.filter(id_sms = id_prodi).values('tahun_angkatan').annotate(
     tahun=Cast('tahun_angkatan', output_field=CharField()),
     jml_mhs_lulus35=Cast(Sum('jml_mhs_lulus35'), output_field=IntegerField()),

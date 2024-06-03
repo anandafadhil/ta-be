@@ -72,7 +72,7 @@ def calculate_scores(data, stat_prod):
     }
 
 def get_prediction(data):
-    model_file_path = os.path.join(settings.BASE_DIR, 'predict_PDDikti_be', 'static', 'predict_PDDikti_be', 'model_files', 'stacking_clf_pipeline_compressed.pkl')
+    model_file_path = os.path.join(settings.BASE_DIR, 'predict_PDDikti_be', 'static', 'predict_PDDikti_be', 'model_files', 'stacking_clf_pipeline_NO_PCA_YES_SMOTE.pkl')
     stacking_clf_loaded = joblib.load(model_file_path)
     y_pred = stacking_clf_loaded.predict(data)
     return y_pred
