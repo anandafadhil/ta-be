@@ -44,41 +44,28 @@ def get_prodi_vis(request, id_univ):
 
 @csrf_exempt
 def handle_data_singular(request):
-    if request.method != 'POST':
-        return JsonResponse({"error": "Invalid request method"}, status=405)
+    data = json.loads(request.body)
+    id_prodi = data['id']
 
-    try:
-        data = json.loads(request.body)
-        id_prodi = data.get('id')
-        if not id_prodi:
-            return JsonResponse({"error": "Missing 'id' in request body"}, status=400)
-    except json.JSONDecodeError:
-        return JsonResponse({"error": "Invalid JSON format"}, status=400)
+    # Call the get statistik services
+    stat_prod = services.get_statistik_prodi(id_prodi)
+    stat_prod_data = stat_prod.content.decode()
+    stats_dict = json.loads(stat_prod_data)
+    stats = stats_dict['data']
 
-    try:
-        # Call the get statistik services
-        stat_prod = services.get_statistik_prodi(id_prodi)
-        stat_prod_data = stat_prod.content.decode()
-        stats_dict = json.loads(stat_prod_data)
-        stats = stats_dict.get('data', [])
-    except Exception as e:
-        return JsonResponse({"error": str(e)}, status=500)
-
-    if not stats:
+    if not stat_prod_data:
         return JsonResponse({"error": "No statistics found for the provided ID"}, status=404)
 
-    try:
-        # Call the calculation & prediction services
-        first_stat = stats[0]
-        scores = services.calculate_scores(data, first_stat)
-        df = pd.DataFrame([scores])
-        y_pred_stacking_loaded = services.get_prediction(df)
-    except Exception as e:
-        return JsonResponse({"error": str(e)}, status=500)
+    first_stat = stats[0]
+    scores = services.calculate_scores(data, first_stat)
+    df = pd.DataFrame([scores])
+    y_pred_stacking_loaded = services.get_prediction(df)
 
-    prediction = y_pred_stacking_loaded == 1
-    return JsonResponse({"prediction": prediction})
-
+    if y_pred_stacking_loaded == 1:
+        return JsonResponse({"prediction": True})
+    else:
+        return JsonResponse({"prediction": False})
+    
 @csrf_exempt
 def handle_data_bulk(request):
     data = json.loads(request.body)
@@ -140,7 +127,7 @@ def get_statistik_lulus_tahun(request):
         **all_time_total
     })
 
-    # Sort the result by 'tahun_angkatan'
+    # Sort by 'tahun_angkatan'
     query_1.sort(key=lambda x: x['tahun_angkatan'])
 
     # Print the result
@@ -148,7 +135,6 @@ def get_statistik_lulus_tahun(request):
         print(row)
     
 def get_avg_grad_time_univ_all(request=None):
-    # Calculate overall average
     all_time = StatistikProdiVisualisasi.objects.aggregate(
         avg_grad_time=Cast(
             (Sum(F('jml_mhs_lulus35') * 3.5) + 
@@ -170,7 +156,6 @@ def get_avg_grad_time_univ_all(request=None):
         year = str(avg_lulus['tahun_angkatan'])
         avg_grad = avg_lulus['avg_grad_time']
         rounded_avg_grad = round(avg_grad, 1)
-        # print(type(year), rounded_avg_grad) 
         if year == "All Time" : 
             list_selected.append({"selected_year": year, "avg_grad":rounded_avg_grad})
             break
@@ -276,8 +261,7 @@ def get_dist_grad_univ_all(request, year) :
         jml_mhs_lulus50 = res['jml_mhs_lulus50']
         jml_mhs_lulus55 = res['jml_mhs_lulus55']
         jml_mhs_lulus60 = res['jml_mhs_lulus60']
-        # rounded_avg_grad = round(avg_grad, 1)
-        # print(type(year), rounded_avg_grad) 
+
         if tahun == selected_year : 
             list_selected.append({"selected_year": tahun, "jml_mhs_lulus35":jml_mhs_lulus35, "jml_mhs_lulus40":jml_mhs_lulus40, "jml_mhs_lulus45":jml_mhs_lulus45, "jml_mhs_lulus50":jml_mhs_lulus50, "jml_mhs_lulus55":jml_mhs_lulus55, "jml_mhs_lulus60":jml_mhs_lulus60})
             break
@@ -286,7 +270,6 @@ def get_dist_grad_univ_all(request, year) :
             break
         else :
             continue
-    # print(list_selected)
 
     return JsonResponse(list_selected, safe=False)
 
