@@ -11,6 +11,10 @@ class DaftarProdiPrediksi(models.Model):
     class Meta:
         managed = False
         db_table = 'daftar_prodi_prediksi'
+        indexes = [
+            models.Index(fields=['id_univ']),
+            models.Index(fields=['nama_univ']),
+        ]
 
 
 class DaftarUnivProdiVisualisasi(models.Model):
@@ -26,6 +30,12 @@ class DaftarUnivProdiVisualisasi(models.Model):
     class Meta:
         managed = False
         db_table = 'daftar_univ_prodi_visualisasi'
+        indexes = [
+            models.Index(fields=['id_univ']),
+            models.Index(fields=['nm_univ']),
+            models.Index(fields=['rank_univ']),
+            models.Index(fields=['id_prodi']),
+        ]
 
 
 class StatistikProdiPrediksi(models.Model):
@@ -52,6 +62,9 @@ class StatistikProdiPrediksi(models.Model):
     class Meta:
         managed = False
         db_table = 'statistik_prodi_prediksi'
+        indexes = [
+            models.Index(fields=['id_sms']),
+        ]
 
 
 class StatistikProdiVisualisasi(models.Model):
@@ -79,6 +92,10 @@ class StatistikProdiVisualisasi(models.Model):
     class Meta:
         managed = False
         db_table = 'statistik_prodi_visualisasi'
+        indexes = [
+            models.Index(fields=['id_sms']),
+            models.Index(fields=['tahun_angkatan']),
+        ]
 
 
 class WilayahUniv(models.Model):
@@ -90,9 +107,7 @@ class WilayahUniv(models.Model):
     class Meta:
         managed = False
         db_table = 'wilayah_univ'
-
-class SavedUniProdi(models.Model):
-    id_univ = models.TextField(blank=True, null=True)
-    nama_univ = models.TextField(blank=True, null=True)
-    id_prodi = models.TextField(primary_key=True)
-    nama_prodi = models.TextField(blank=True, null=True)
+        indexes = [
+            models.Index(fields=['id_sp']),
+            models.Index(fields=['provinsi']),
+        ]

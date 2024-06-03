@@ -44,82 +44,68 @@ def get_prodi_vis(request, id_univ):
 
 @csrf_exempt
 def handle_data_singular(request):
-    data = json.loads(request.body)
-    id_prodi = data['id']
+    if request.method != 'POST':
+        return JsonResponse({"error": "Invalid request method"}, status=405)
 
-    # Call the get statistik services
-    stat_prod = services.get_statistik_prodi(id_prodi)
-    stat_prod_data = stat_prod.content.decode()
-    stats_dict = json.loads(stat_prod_data)
-    stats = stats_dict['data']
+    try:
+        data = json.loads(request.body)
+        id_prodi = data.get('id')
+        if not id_prodi:
+            return JsonResponse({"error": "Missing 'id' in request body"}, status=400)
+    except json.JSONDecodeError:
+        return JsonResponse({"error": "Invalid JSON format"}, status=400)
 
-    if not stat_prod_data:
+    try:
+        # Call the get statistik services
+        stat_prod = services.get_statistik_prodi(id_prodi)
+        stat_prod_data = stat_prod.content.decode()
+        stats_dict = json.loads(stat_prod_data)
+        stats = stats_dict.get('data', [])
+    except Exception as e:
+        return JsonResponse({"error": str(e)}, status=500)
+
+    if not stats:
         return JsonResponse({"error": "No statistics found for the provided ID"}, status=404)
 
-    # Call the calculation & prediction services
-    first_stat = stats[0]
-    scores = services.calculate_scores(data, first_stat)
-    df = pd.DataFrame([scores])
-    y_pred_stacking_loaded = services.get_prediction(df)
+    try:
+        # Call the calculation & prediction services
+        first_stat = stats[0]
+        scores = services.calculate_scores(data, first_stat)
+        df = pd.DataFrame([scores])
+        y_pred_stacking_loaded = services.get_prediction(df)
+    except Exception as e:
+        return JsonResponse({"error": str(e)}, status=500)
 
-    if y_pred_stacking_loaded == 1:
-        return JsonResponse({"prediction": True})
-    else:
-        return JsonResponse({"prediction": False})
+    prediction = y_pred_stacking_loaded == 1
+    return JsonResponse({"prediction": prediction})
 
 @csrf_exempt
 def handle_data_bulk(request):
     data = json.loads(request.body)
-    print("dat", data['data'])
     id_prodi = data['id']
-
-    # students_data = []
-    # for student in data['data']:
-    #     student_data = {
-    #         'NPM': student['NPM'],
-    #         'IPK_sem_1': student['IPK_sem_1'],
-    #         'IPK_sem_2': student['IPK_sem_2'],
-    #         'IPK_sem_3': student['IPK_sem_3'],
-    #         'IPK_sem_4': student['IPK_sem_4'],
-    #         'SKS_sem_1': student['SKS_sem_1'],
-    #         'SKS_sem_2': student['SKS_sem_2'],
-    #         'SKS_sem_3': student['SKS_sem_3'],
-    #         'SKS_sem_4': student['SKS_sem_4'],
-    #         'SKSL_sem_1': student['SKSL_sem_1'],
-    #         'SKSL_sem_2': student['SKSL_sem_2'],
-    #         'SKSL_sem_3': student['SKSL_sem_3'],
-    #         'SKSL_sem_4': student['SKSL_sem_4'],
-    #     }
-    #     students_data.append(student_data)
+    student_data_list = data['data']
     
-    # print("stud", students_data)
+    # Fetch all required statistics in one query
+    stat_prod = services.get_statistik_prodi(id_prodi)
+    stat_prod_data = stat_prod.content.decode()
+    stats_dict = json.loads(stat_prod_data)
+    
+    if not stats_dict['data']:
+        return JsonResponse({"error": "No statistics found for the provided ID"}, status=404)
+    
+    first_stat = stats_dict['data'][0]
 
-    # Data Processing
     processed_data = []
-    for splitted_stud in data['data'] :
-        NPM = splitted_stud['NPM']
-
-        stat_prod = services.get_statistik_prodi(id_prodi)
-        stat_prod_data = stat_prod.content.decode()
-        stats_dict = json.loads(stat_prod_data)
-        stats = stats_dict['data']
-
-        if not stat_prod_data:
-            return JsonResponse({"error": "No statistics found for the provided ID"}, status=404)
-        
+    for student_data in student_data_list:
+        NPM = student_data['NPM']
         
         # Call the calculation & prediction services
-        first_stat = stats[0]
-        scores = services.calculate_scores(splitted_stud, first_stat)
+        scores = services.calculate_scores(student_data, first_stat)
         df = pd.DataFrame([scores])
         y_pred_stacking_loaded = services.get_prediction(df)
 
-        if y_pred_stacking_loaded == 1:
-            result = "Tepat Waktu"
-            processed_data.append({"NPM": NPM, "RES":result})
-        else:
-            result = "Tidak Tepat Waktu"
-            processed_data.append({"NPM": NPM, "RES":result})
+        result = "Tepat Waktu" if y_pred_stacking_loaded == 1 else "Tidak Tepat Waktu"
+        processed_data.append({"NPM": NPM, "RES": result})
         
     return JsonResponse({"data": processed_data})
 
@@ -504,44 +490,43 @@ def get_avg_grad_time_univ_filter(request, id_univ):
 
 def get_prodi_ranking(request, id_univ):
     selected_id = id_univ
-    statistik_data = StatistikProdiVisualisasi.objects.select_related('id_sms').values(
+
+    # Fetch statistik data with related prodi data in one query
+    statistik_data = StatistikProdiVisualisasi.objects.filter(
+        id_sms__in=DaftarUnivProdiVisualisasi.objects.filter(id_univ=selected_id).values('id_prodi')
+    ).values(
         'uuid', 'id_sms', 'tahun_angkatan', 'jml_mhs_lulus35', 'jml_mhs_lulus40', 'jml_mhs_lulus45', 'jml_mhs_lulus50', 'jml_mhs_lulus55', 'jml_mhs_lulus60'
     )
-    univ_prodi_data = DaftarUnivProdiVisualisasi.objects.values('id_prodi', 'id_univ', 'nm_univ', 'nm_prodi')
+
+    # Fetch related univ prodi data
+    univ_prodi_data = DaftarUnivProdiVisualisasi.objects.filter(id_univ=selected_id).values('id_prodi', 'id_univ', 'nm_univ', 'nm_prodi')
 
     # Create dictionaries for fast lookups
     univ_prodi_dict = {up['id_prodi']: up for up in univ_prodi_data}
 
     res = []
     for spv in statistik_data:
-        nm_univ = None
         total_lulus35_40 = spv['jml_mhs_lulus35'] + spv['jml_mhs_lulus40']
         total_lulus = total_lulus35_40 + spv['jml_mhs_lulus45'] + spv['jml_mhs_lulus50'] + spv['jml_mhs_lulus55'] + spv['jml_mhs_lulus60']
         persentase = float(total_lulus35_40 / total_lulus) if total_lulus > 0 else 0
 
-        # left join dupv
         dupv = univ_prodi_dict.get(spv['id_sms'])
         if dupv:
-            nm_univ = dupv['nm_univ']
-            id_univ = dupv['id_univ']
-            nm_prodi = dupv['nm_prodi']
-            id_prodi = dupv['id_prodi']
-            if id_univ == selected_id: 
-                res.append({
-                    'uuid': spv['uuid'],
-                    'per': persentase,
-                    'thn': spv['tahun_angkatan'],
-                    'id_sms': spv['id_sms'],
-                    'nm_univ': nm_univ,
-                    'id_prodi': id_prodi,
-                    'nm_prodi': nm_prodi,
-                    'jml_mhs_lulus35': spv['jml_mhs_lulus35'],
-                    'jml_mhs_lulus40': spv['jml_mhs_lulus40'],
-                    'jml_mhs_lulus45': spv['jml_mhs_lulus45'],
-                    'jml_mhs_lulus50': spv['jml_mhs_lulus50'],
-                    'jml_mhs_lulus55': spv['jml_mhs_lulus55'],
-                    'jml_mhs_lulus60': spv['jml_mhs_lulus60']
-                })
+            res.append({
+                'uuid': spv['uuid'],
+                'per': persentase,
+                'thn': spv['tahun_angkatan'],
+                'id_sms': spv['id_sms'],
+                'nm_univ': dupv['nm_univ'],
+                'id_prodi': dupv['id_prodi'],
+                'nm_prodi': dupv['nm_prodi'],
+                'jml_mhs_lulus35': spv['jml_mhs_lulus35'],
+                'jml_mhs_lulus40': spv['jml_mhs_lulus40'],
+                'jml_mhs_lulus45': spv['jml_mhs_lulus45'],
+                'jml_mhs_lulus50': spv['jml_mhs_lulus50'],
+                'jml_mhs_lulus55': spv['jml_mhs_lulus55'],
+                'jml_mhs_lulus60': spv['jml_mhs_lulus60']
+            })
 
     grouped_data = defaultdict(lambda: {
         'jml_mhs_lulus35': 0,
@@ -552,8 +537,6 @@ def get_prodi_ranking(request, id_univ):
         'jml_mhs_lulus60': 0
     })
 
-    result_all = []
-
     for entry in res:
         key = (entry['id_prodi'], entry['nm_prodi'])
         grouped_data[key]['jml_mhs_lulus35'] += entry['jml_mhs_lulus35']
@@ -563,6 +546,7 @@ def get_prodi_ranking(request, id_univ):
         grouped_data[key]['jml_mhs_lulus55'] += entry['jml_mhs_lulus55']
         grouped_data[key]['jml_mhs_lulus60'] += entry['jml_mhs_lulus60']
 
+    result_all = []
     for key, counts in grouped_data.items():
         id_prodi, nm_prodi = key
         total_lulus35_40 = counts['jml_mhs_lulus35'] + counts['jml_mhs_lulus40']
@@ -574,11 +558,11 @@ def get_prodi_ranking(request, id_univ):
             'nm_prodi': nm_prodi,
             'persentase': persentase
         })
-    count = 0
+
     result_all_sorted = sorted(result_all, key=lambda x: x['persentase'], reverse=True)
-    for pos in result_all_sorted:
-        count += 1
-        pos['position'] = count
+
+    for index, pos in enumerate(result_all_sorted):
+        pos['position'] = index + 1
 
     return JsonResponse(result_all_sorted, safe=False)
 
