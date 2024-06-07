@@ -390,15 +390,19 @@ def get_univ_info(request, id_univ):
     if wu and wu['provinsi'] is not None:
         provinsi = wu['provinsi']
         provinsi_label = wu['provinsi_label']
+    
+    else :
+        provinsi = "Indonesia"
+        provinsi_label = "Indonesia"
 
-        res.append({
-            'id_univ': univ_info['id_univ'],
-            'nm_univ': univ_info['nm_univ'],
-            'thn': univ_info['tahun_berdiri_univ'],
-            'rank_univ': univ_info['rank_univ'],
-            'provinsi': provinsi,
-            'provinsi_label': provinsi_label,
-        })
+    res.append({
+        'id_univ': univ_info['id_univ'],
+        'nm_univ': univ_info['nm_univ'],
+        'thn': univ_info['tahun_berdiri_univ'],
+        'rank_univ': univ_info['rank_univ'],
+        'provinsi': provinsi,
+        'provinsi_label': provinsi_label,
+    })
     return JsonResponse(res, safe=False)
 
 def get_avg_grad_time_univ_filter(request, id_univ):
