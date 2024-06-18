@@ -84,7 +84,7 @@ def handle_data_bulk(request):
 
     processed_data = []
     for student_data in student_data_list:
-        NPM = student_data['NPM']
+        NPM = student_data['Identifier_Mahasiswa']
         
         # Call the calculation & prediction services
         scores = services.calculate_scores(student_data, first_stat)
